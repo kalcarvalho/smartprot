@@ -29,7 +29,13 @@ data class PolicyResponse(
     @SerializedName("device_id") val deviceId: String,
     val version: Int,
     val rules: List<Rule>,
-    @SerializedName("app_domains") val appDomains: Map<String, List<String>>? = null
+    @SerializedName("app_domains") val appDomains: Map<String, List<String>>? = null,
+    val settings: PolicySettings? = null
+)
+
+data class PolicySettings(
+    @SerializedName("protection_enabled") val protectionEnabled: Boolean = true,
+    @SerializedName("app_icon_visible") val appIconVisible: Boolean = true
 )
 
 data class Rule(

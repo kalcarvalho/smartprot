@@ -29,7 +29,7 @@ class DeviceController extends Controller
         $device->policies()->create([
             'version' => 1,
             'rules' => [],
-            'settings' => ['protection_enabled' => true],
+            'settings' => ['protection_enabled' => true, 'app_icon_visible' => false],
         ]);
 
         return response()->json([
@@ -73,6 +73,7 @@ class DeviceController extends Controller
         $policy = $device->policies()->latest('version')->firstOrFail();
         $settings = [
             'protection_enabled' => true,
+            'app_icon_visible' => true,
             ...($policy->settings ?? []),
         ];
 

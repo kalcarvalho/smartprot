@@ -74,6 +74,7 @@ class MainActivity : AppCompatActivity() {
                             Toast.LENGTH_LONG
                         ).show()
                         repo.sendHeartbeat(null, null, null)
+                        AppVisibility.setIconVisible(this@MainActivity, false)
                         showDashboard()
                         startBackgroundWorkers()
                     },

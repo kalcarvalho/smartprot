@@ -11,7 +11,7 @@ use Illuminate\Support\Str;
 
 class PolicyRuleController extends Controller
 {
-    private const DEFAULT_SETTINGS = ['protection_enabled' => true];
+    private const DEFAULT_SETTINGS = ['protection_enabled' => true, 'app_icon_visible' => true];
 
     public function store(Request $request, Device $device): RedirectResponse
     {
@@ -106,6 +106,25 @@ class PolicyRuleController extends Controller
         $this->createPolicyVersion($device, $policy, $policy?->rules ?? [], $settings);
 
         return back()->with('status', $settings['protection_enabled'] ? 'Bloqueios ativados.' : 'Bloqueios desativados.');
+    }
+
+    public function toggleIconVisibility(Request $request, Device $device): RedirectResponse
+    {
+        abort_unless($device->user_id === null || $device->user_id === $request->user()->id, 404);
+
+        $data = $request->validate([
+            'app_icon_visible' => ['required', 'boolean'],
+        ]);
+
+        $policy = $device->latestPolicy();
+        $settings = [
+            ...$this->settingsFrom($policy),
+            'app_icon_visible' => (bool) $data['app_icon_visible'],
+        ];
+
+        $this->createPolicyVersion($device, $policy, $policy?->rules ?? [], $settings);
+
+        return back()->with('status', $settings['app_icon_visible'] ? 'Icone do app reativado.' : 'Icone do app ocultado.');
     }
 
     private function scheduleFrom(array $data, Request $request): ?array

@@ -28,6 +28,7 @@
                 <div class="stat"><span>Status</span><strong>{{ $device->isOnline() ? 'Online' : 'Offline' }}</strong></div>
                 <div class="stat"><span>Bloqueios</span><strong>{{ $settings['protection_enabled'] ? 'Ativos' : 'Pausados' }}</strong></div>
                 <div class="stat"><span>VPN</span><strong>{{ $device->vpn_active === null ? '-' : ($device->vpn_active ? 'Ativa' : 'Inativa') }}</strong></div>
+                <div class="stat"><span>Icone do app</span><strong>{{ ($settings['app_icon_visible'] ?? true) ? 'Visivel' : 'Oculto' }}</strong></div>
             </section>
 
             <section style="display:flex;gap:8px;margin-bottom:16px;">
@@ -45,6 +46,13 @@
                     @method('patch')
                     <input type="hidden" name="protection_enabled" value="{{ $settings['protection_enabled'] ? 0 : 1 }}">
                     <button class="{{ $settings['protection_enabled'] ? 'danger' : '' }}" type="submit">{{ $settings['protection_enabled'] ? 'Pausar bloqueios' : 'Ativar bloqueios' }}</button>
+                </form>
+                @php($iconVisible = $settings['app_icon_visible'] ?? true)
+                <form method="post" action="{{ route('devices.icon-visibility.update', $device) }}">
+                    @csrf
+                    @method('patch')
+                    <input type="hidden" name="app_icon_visible" value="{{ $iconVisible ? 0 : 1 }}">
+                    <button class="secondary" type="submit">{{ $iconVisible ? 'Ocultar icone do app' : 'Reativar icone do app' }}</button>
                 </form>
             </section>
 

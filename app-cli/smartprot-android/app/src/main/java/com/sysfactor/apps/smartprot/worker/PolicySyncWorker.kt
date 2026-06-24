@@ -14,6 +14,7 @@ import androidx.work.WorkerParameters
 import com.google.gson.Gson
 import com.sysfactor.apps.smartprot.data.repository.DeviceRepository
 import com.sysfactor.apps.smartprot.service.PolicyVpnService
+import com.sysfactor.apps.smartprot.ui.AppVisibility
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.TimeUnit
 
@@ -36,6 +37,7 @@ class PolicySyncWorker(
             result.fold(
                 onSuccess = { policy ->
                     savePolicyVersion(policy.version)
+                    AppVisibility.setIconVisible(applicationContext, policy.settings?.appIconVisible ?: true)
 
                     if (PolicyVpnService.isRunning.value) {
                         val rulesJson = Gson().toJson(policy.rules)

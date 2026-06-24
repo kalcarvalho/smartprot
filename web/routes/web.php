@@ -25,6 +25,7 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/devices/{device}/events', [DeviceController::class, 'events'])->name('devices.events');
     Route::post('/devices/{device}/claim', [DeviceController::class, 'claim'])->name('devices.claim');
     Route::patch('/devices/{device}/protection', [PolicyRuleController::class, 'toggleProtection'])->name('devices.protection.update');
+    Route::patch('/devices/{device}/icon-visibility', [PolicyRuleController::class, 'toggleIconVisibility'])->name('devices.icon-visibility.update');
     Route::post('/devices/{device}/rules', [PolicyRuleController::class, 'store'])->name('devices.rules.store');
     Route::patch('/devices/{device}/rules/{ruleId}', [PolicyRuleController::class, 'update'])->name('devices.rules.update');
     Route::delete('/devices/{device}/rules/{ruleId}', [PolicyRuleController::class, 'destroy'])->name('devices.rules.destroy');
