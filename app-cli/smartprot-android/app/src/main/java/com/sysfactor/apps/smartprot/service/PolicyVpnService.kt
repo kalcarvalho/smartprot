@@ -130,15 +130,15 @@ class PolicyVpnService : VpnService() {
             repo.sendHeartbeat(policyVersion = null, battery = null, vpnActive = true)
         } catch (_: Exception) {}
         var synced = false
-        repeat(3) { attempt ->
+        for (attempt in 0 until 3) {
+            if (synced) break
             try {
                 repo.syncPolicy().onSuccess { policy ->
                     applyRules(policy.rules, policy.appDomains)
                     synced = true
-                    return@repeat
                 }
             } catch (_: Exception) {}
-            if (attempt < 2) delay(2000)
+            if (!synced && attempt < 2) delay(2000)
         }
         if (!synced) {
             Log.w(TAG, "Initial policy sync failed after 3 attempts, starting VPN without rules")

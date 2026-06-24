@@ -43,7 +43,8 @@ class TunForwarder(
         val socket: Socket,
         @Volatile var clientSeq: Long,
         @Volatile var serverSeq: Long,
-        val outThread: Thread
+        val outThread: Thread,
+        val synSeq: Long
     )
 
     private val tcpConns = ConcurrentHashMap<TcpKey, TcpConn>()
@@ -176,6 +177,17 @@ class TunForwarder(
 
     private fun handleTcpSyn(key: TcpKey, dstIp: Int, dstPort: Int, clientSeq: Long) {
         Log.d(TAG, "SYN ${intToIp(dstIp)}:$dstPort")
+
+        // The client may retransmit SYN if our SYN-ACK doesn't arrive in time
+        // (common on flaky networks). Without this check, every retransmit
+        // opened a brand-new real socket + relay thread for the same logical
+        // connection, leaking both forever since the old ones were never closed.
+        tcpConns[key]?.let { existing ->
+            writeTcpPacket(key.dstIp, key.srcIp, key.dstPort, key.srcPort,
+                existing.synSeq, clientSeq + 1, 0x12.toByte(), 65535, ByteArray(0), 0)
+            return
+        }
+
         if (dstIp in currentBlockedIps) {
             sendRst(key.dstIp, key.srcIp, key.dstPort, key.srcPort,
                 clientSeq + 1, 0)
@@ -207,7 +219,7 @@ class TunForwarder(
                 } catch (_: Exception) {}
                 closeTcpConn(key)
             }
-            val conn = TcpConn(sock, clientSeq + 1, serverSeq, outThread)
+            val conn = TcpConn(sock, clientSeq + 1, serverSeq, outThread, synSeq = serverSeq)
             tcpConns[key] = conn
 
             writeTcpPacket(key.dstIp, key.srcIp, key.dstPort, key.srcPort,
