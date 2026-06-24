@@ -18,7 +18,7 @@ class DashboardController extends Controller
         return view('dashboard', [
             'deviceCount' => $deviceIds->count(),
             'onlineDeviceCount' => Device::whereIn('id', $deviceIds)
-                ->where('last_seen_at', '>=', now()->subMinutes(5))
+                ->where('last_seen_at', '>=', now()->subMinutes(Device::ONLINE_THRESHOLD_MINUTES))
                 ->count(),
             'policyCount' => Policy::whereIn('device_id', $deviceIds)->count(),
             'eventCount' => DeviceEvent::whereIn('device_id', $deviceIds)->count(),

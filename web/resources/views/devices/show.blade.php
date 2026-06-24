@@ -25,7 +25,7 @@
 
             <section class="grid stats">
                 <div class="stat"><span>Plataforma</span><strong>{{ strtoupper($device->platform) }}</strong></div>
-                <div class="stat"><span>Status</span><strong>{{ $device->last_seen_at && $device->last_seen_at->gte(now()->subMinutes(5)) ? 'Online' : 'Offline' }}</strong></div>
+                <div class="stat"><span>Status</span><strong>{{ $device->isOnline() ? 'Online' : 'Offline' }}</strong></div>
                 <div class="stat"><span>Bloqueios</span><strong>{{ $settings['protection_enabled'] ? 'Ativos' : 'Pausados' }}</strong></div>
                 <div class="stat"><span>VPN</span><strong>{{ $device->vpn_active === null ? '-' : ($device->vpn_active ? 'Ativa' : 'Inativa') }}</strong></div>
             </section>

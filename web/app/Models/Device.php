@@ -11,6 +11,13 @@ class Device extends Model
 {
     use HasFactory;
 
+    /**
+     * HeartbeatWorker runs every 15 minutes (Android WorkManager's periodic
+     * minimum) — this must stay above that interval or devices flicker
+     * offline between heartbeats.
+     */
+    public const ONLINE_THRESHOLD_MINUTES = 20;
+
     protected $fillable = [
         'user_id',
         'public_id',
@@ -55,5 +62,11 @@ class Device extends Model
     public function domains(): HasMany
     {
         return $this->hasMany(DeviceDomain::class);
+    }
+
+    public function isOnline(): bool
+    {
+        return $this->last_seen_at !== null
+            && $this->last_seen_at->gte(now()->subMinutes(self::ONLINE_THRESHOLD_MINUTES));
     }
 }

@@ -27,7 +27,7 @@
                         <thead><tr><th>Nome</th><th>Status</th><th>Bloqueio</th><th>Politica</th><th></th></tr></thead>
                         <tbody>
                             @forelse ($recentDevices as $device)
-                                @php($online = $device->last_seen_at && $device->last_seen_at->gte(now()->subMinutes(5)))
+                                @php($online = $device->isOnline())
                                 @php($latestPolicy = $device->latestPolicy())
                                 @php($protectionEnabled = (bool) ($latestPolicy?->settings['protection_enabled'] ?? true))
                                 <tr>

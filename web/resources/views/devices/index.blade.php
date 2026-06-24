@@ -17,7 +17,7 @@
                     <thead><tr><th>Smartphone</th><th>Plataforma</th><th>Status</th><th>Politica</th><th></th></tr></thead>
                     <tbody>
                         @forelse ($devices as $device)
-                            @php($online = $device->last_seen_at && $device->last_seen_at->gte(now()->subMinutes(5)))
+                            @php($online = $device->isOnline())
                             <tr>
                                 <td><strong>{{ $device->name }}</strong><br><span class="muted">{{ $device->public_id }}</span></td>
                                 <td>{{ $device->platform }}</td>
