@@ -110,7 +110,7 @@ class DeviceController extends Controller
             'settings' => $settings,
             'rules' => collect($policy?->rules ?? []),
             'lastPolicySync' => $lastPolicySync,
-            'policySyncIntervalMinutes' => 5,
+            'policySyncIntervalMinutes' => 1,
         ]);
     }
 }

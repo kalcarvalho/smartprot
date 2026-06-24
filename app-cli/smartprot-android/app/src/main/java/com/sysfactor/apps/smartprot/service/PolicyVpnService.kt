@@ -48,6 +48,7 @@ class PolicyVpnService : VpnService() {
     // periodic flush reports them to the server via DeviceRepository.reportDomains().
     private val observedDomains = ConcurrentHashMap<String, String?>()
     private var domainReportLoopStarted = false
+    private var policySyncLoopStarted = false
 
     override fun onCreate() {
         super.onCreate()
@@ -87,6 +88,29 @@ class PolicyVpnService : VpnService() {
             syncImmediately()
         }
         startDomainReportLoop()
+        startPolicySyncLoop()
+    }
+
+    /**
+     * Polls the policy every minute while the VPN foreground service is alive.
+     * WorkManager's PeriodicWorkRequest has a hard 15-minute floor enforced by
+     * Android itself, so a faster cadence than that can only be done from a
+     * running foreground service like this one, not from PolicySyncWorker.
+     */
+    private fun startPolicySyncLoop() {
+        if (policySyncLoopStarted) return
+        policySyncLoopStarted = true
+        scope.launch {
+            while (true) {
+                delay(POLICY_SYNC_LOOP_INTERVAL_MS)
+                val repo = DeviceRepository(this@PolicyVpnService)
+                try {
+                    repo.syncPolicy().onSuccess { policy ->
+                        applyRules(policy.rules, policy.appDomains)
+                    }
+                } catch (_: Exception) {}
+            }
+        }
     }
 
     private fun stop() {
@@ -343,6 +367,7 @@ class PolicyVpnService : VpnService() {
         private const val PREF_VPN_STATE = "smartprot_vpn_state"
         private const val KEY_VPN_ACTIVE = "vpn_active"
         private const val DOMAIN_REPORT_INTERVAL_MS = 60_000L
+        private const val POLICY_SYNC_LOOP_INTERVAL_MS = 60_000L
 
         val isRunning = MutableStateFlow(false)
         val blockedAppPackages = MutableStateFlow<Set<String>>(emptySet())
