@@ -14,7 +14,7 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
-        buildConfigField("String", "API_BASE_URL", "\"http://192.168.1.152:8081/api/v1/\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://smartprot.sysfactor.com.br/api/v1/\"")
         buildConfigField("long", "HEARTBEAT_INTERVAL_MINUTES", "15L")
         buildConfigField("long", "POLICY_SYNC_INTERVAL_MINUTES", "5L")
     }
