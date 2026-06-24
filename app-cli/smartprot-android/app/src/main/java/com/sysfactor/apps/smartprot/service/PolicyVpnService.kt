@@ -227,20 +227,12 @@ class PolicyVpnService : VpnService() {
         builder.addRoute("0.0.0.0", 0)
         builder.addDnsServer("1.1.1.1")
         builder.addDnsServer("8.8.8.8")
+        // Only SmartProt itself bypasses the VPN (loop prevention). Every other
+        // app must be tunneled — domain/IP rules are app-agnostic (e.g. a browser
+        // hitting a blocked domain), so excluding apps without their own "app"
+        // rule from the tunnel silently broke domain/IP blocking entirely.
         builder.addDisallowedApplication(packageName)
-
-        val pm = packageManager
-        val allApps = pm.getInstalledApplications(0)
-        var excludedCount = 0
-        for (app in allApps) {
-            if (app.packageName !in blockedApps && app.packageName != packageName) {
-                try {
-                    builder.addDisallowedApplication(app.packageName)
-                    excludedCount++
-                } catch (_: Exception) { }
-            }
-        }
-        Log.i(TAG, "VPN rebuild: $excludedCount apps bypass, ${blockedApps.size} apps monitored")
+        Log.i(TAG, "VPN rebuild: ${blockedApps.size} apps explicitly blocked, all other traffic tunneled")
 
         vpnInterface?.close()
         vpnInterface = builder.establish()
