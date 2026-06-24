@@ -1,4 +1,4 @@
-package com.smartprot.worker
+package com.sysfactor.apps.smartprot.worker
 
 import android.content.Context
 import android.content.Intent
@@ -12,8 +12,8 @@ import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
 import com.google.gson.Gson
-import com.smartprot.data.repository.DeviceRepository
-import com.smartprot.service.PolicyVpnService
+import com.sysfactor.apps.smartprot.data.repository.DeviceRepository
+import com.sysfactor.apps.smartprot.service.PolicyVpnService
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.TimeUnit
 
@@ -42,6 +42,9 @@ class PolicySyncWorker(
                         val intent = Intent(applicationContext, PolicyVpnService::class.java).apply {
                             action = PolicyVpnService.ACTION_UPDATE_RULES
                             putExtra(PolicyVpnService.EXTRA_RULES_JSON, rulesJson)
+                            policy.appDomains?.let { appDomains ->
+                                putExtra(PolicyVpnService.EXTRA_APP_DOMAINS_JSON, Gson().toJson(appDomains))
+                            }
                         }
                         applicationContext.startService(intent)
                     }

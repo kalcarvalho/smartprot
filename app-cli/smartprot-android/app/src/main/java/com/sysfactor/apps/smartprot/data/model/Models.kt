@@ -1,4 +1,4 @@
-package com.smartprot.data.model
+package com.sysfactor.apps.smartprot.data.model
 
 import com.google.gson.annotations.SerializedName
 
@@ -28,7 +28,8 @@ data class HeartbeatResponse(
 data class PolicyResponse(
     @SerializedName("device_id") val deviceId: String,
     val version: Int,
-    val rules: List<Rule>
+    val rules: List<Rule>,
+    @SerializedName("app_domains") val appDomains: Map<String, List<String>>? = null
 )
 
 data class Rule(
@@ -47,4 +48,14 @@ data class EventRequest(
 
 data class EventResponse(
     val accepted: Boolean
+)
+
+data class DomainsRequest(
+    val domains: List<String>,
+    @SerializedName("app_package") val appPackage: String? = null
+)
+
+data class DomainsResponse(
+    val accepted: Boolean,
+    val inserted: Int
 )

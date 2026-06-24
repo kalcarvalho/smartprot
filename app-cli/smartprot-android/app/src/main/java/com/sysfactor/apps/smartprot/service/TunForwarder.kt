@@ -1,7 +1,7 @@
-package com.smartprot.service
+package com.sysfactor.apps.smartprot.service
 
 import android.net.ConnectivityManager
-import android.net.Network
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import java.io.FileInputStream
@@ -16,15 +16,21 @@ import kotlin.concurrent.thread
 import kotlin.math.min
 
 class TunForwarder(
-    private val network: Network? = null,
+    private val connectivityManager: ConnectivityManager,
     private val blockedDomains: Set<String> = emptySet(),
-    private val blockedIps: Set<Int> = emptySet()
+    private val blockedIps: Set<Int> = emptySet(),
+    private val onBlocked: ((type: String, target: String, ip: String, port: Int) -> Unit)? = null,
+    // Called for every domain seen in traffic, blocked or not, so the parent panel can
+    // show "domains this device is trying to reach" and let the parent block them or
+    // associate them with an app dynamically. uid is the owning app's Linux uid
+    // (-1 / Process.INVALID_UID if it couldn't be resolved, e.g. below API 29).
+    private val onDomainObserved: ((domain: String, uid: Int) -> Unit)? = null
 ) {
 
-    private var tunIn: FileInputStream? = null
-    private var tunOut: FileOutputStream? = null
+    @Volatile private var tunIn: FileInputStream? = null
+    @Volatile private var tunOut: FileOutputStream? = null
     private var readerThread: Thread? = null
-    private var running = false
+    @Volatile private var running = false
 
     @Volatile private var currentBlockedDomains: Set<String> = blockedDomains
     @Volatile private var currentBlockedIps: Set<Int> = blockedIps
@@ -52,21 +58,27 @@ class TunForwarder(
     }
 
     fun start(fd: ParcelFileDescriptor) {
-        tunIn = FileInputStream(fd.fileDescriptor)
-        tunOut = FileOutputStream(fd.fileDescriptor)
+        tunIn = ParcelFileDescriptor.AutoCloseInputStream(fd)
+        tunOut = ParcelFileDescriptor.AutoCloseOutputStream(fd)
         running = true
         readerThread = thread(isDaemon = true, name = "tun-reader") {
+            Log.i(TAG, "Reader thread started, tunIn=$tunIn")
             val buf = ByteArray(65535)
             while (running) {
                 try {
-                    val n = tunIn?.read(buf) ?: break
-                    if (n <= 0) break
+                    val n = tunIn?.read(buf) ?: -1
+                    if (n == -1) break
+                    if (n == 0) {
+                        Thread.sleep(10)
+                        continue
+                    }
                     processPacket(buf, n)
                 } catch (e: Exception) {
                     if (running) Log.e(TAG, "TUN read error", e)
                     break
                 }
             }
+            Log.i(TAG, "Reader thread exited")
         }
     }
 
@@ -106,13 +118,13 @@ class TunForwarder(
     private fun createSocket(): Socket {
         val sock = Socket()
         sock.tcpNoDelay = true
-        network?.bindSocket(sock)
+        connectivityManager.activeNetwork?.bindSocket(sock)
         return sock
     }
 
     private fun createDatagramSocket(): DatagramSocket {
         val sock = DatagramSocket()
-        network?.bindSocket(sock)
+        connectivityManager.activeNetwork?.bindSocket(sock)
         return sock
     }
 
@@ -165,9 +177,10 @@ class TunForwarder(
     private fun handleTcpSyn(key: TcpKey, dstIp: Int, dstPort: Int, clientSeq: Long) {
         Log.d(TAG, "SYN ${intToIp(dstIp)}:$dstPort")
         if (dstIp in currentBlockedIps) {
-            writeTcpPacket(key.dstIp, key.srcIp, key.dstPort, key.srcPort,
-                0, 0, 0x14.toByte(), 0, ByteArray(0), 0)
+            sendRst(key.dstIp, key.srcIp, key.dstPort, key.srcPort,
+                clientSeq + 1, 0)
             Log.i(TAG, "Blocked TCP to IP ${intToIp(dstIp)}:$dstPort")
+            onBlocked?.invoke("ip_blocked", intToIp(dstIp), intToIp(dstIp), dstPort)
             return
         }
         try {
@@ -184,7 +197,7 @@ class TunForwarder(
                         if (n <= 0) break
                         val writeSeq = localServerSeq + 1
                         val cur = tcpConns[key]
-                        val clientAck = cur?.clientSeq ?: (clientSeq + 1)
+                        val clientAck = if (cur != null) cur.clientSeq else clientSeq + 1L
                         writeTcpPacket(key.dstIp, key.srcIp, key.dstPort, key.srcPort,
                             writeSeq, clientAck,
                             0x18.toByte(), 65535, outBuf, n)
@@ -194,36 +207,68 @@ class TunForwarder(
                 } catch (_: Exception) {}
                 closeTcpConn(key)
             }
-            val conn = TcpConn(sock, clientSeq, serverSeq, outThread)
+            val conn = TcpConn(sock, clientSeq + 1, serverSeq, outThread)
             tcpConns[key] = conn
-            conn.outThread.start()
 
             writeTcpPacket(key.dstIp, key.srcIp, key.dstPort, key.srcPort,
                 serverSeq, clientSeq + 1, 0x12.toByte(), 65535, ByteArray(0), 0)
         } catch (e: Exception) {
-            writeTcpPacket(key.dstIp, key.srcIp, key.dstPort, key.srcPort,
-                0, 0, 0x14.toByte(), 0, ByteArray(0), 0)
+            sendRst(key.dstIp, key.srcIp, key.dstPort, key.srcPort,
+                clientSeq + 1, 0)
         }
     }
 
     private fun inspectAndBlock(key: TcpKey, dstIp: Int, dstPort: Int, data: ByteArray, offset: Int, len: Int): Boolean {
-        if (currentBlockedDomains.isEmpty()) return false
         val domain: String? = when (dstPort) {
             80 -> extractHttpHost(data, offset, len)
             443 -> extractTlsSni(data, offset, len)
             else -> null
         }
-        val matched = domain?.let { d ->
-            currentBlockedDomains.any { blocked ->
-                d == blocked || d.endsWith(".$blocked")
-            }
-        } ?: false
+
+        if (domain != null) {
+            reportObservedDomain(domain, PROTO_TCP, key.srcIp, key.srcPort, dstIp, dstPort)
+        }
+
+        if (domain == null || currentBlockedDomains.isEmpty()) return false
+
+        val matched = currentBlockedDomains.any { blocked ->
+            domain == blocked || domain.endsWith(".$blocked")
+        }
         if (matched) {
             Log.i(TAG, "Blocked connection to $domain (${intToIp(dstIp)}:$dstPort)")
-            writeTcpPacket(key.dstIp, key.srcIp, key.dstPort, key.srcPort,
-                0, 0, 0x14.toByte(), 0, ByteArray(0), 0)
+            val conn = tcpConns[key]
+            val rstSeq = conn?.serverSeq?.plus(1L) ?: 0L
+            sendRst(key.dstIp, key.srcIp, key.dstPort, key.srcPort,
+                rstSeq, 0)
+            onBlocked?.invoke("domain_blocked", domain, intToIp(dstIp), dstPort)
         }
         return matched
+    }
+
+    /**
+     * Resolves the owning app's uid for a connection (best-effort, API 29+) and
+     * forwards the observed domain upstream regardless of block status.
+     */
+    private fun reportObservedDomain(domain: String, protocol: Int, srcIp: Int, srcPort: Int, dstIp: Int, dstPort: Int) {
+        val callback = onDomainObserved ?: return
+        val uid = resolveOwnerUid(protocol, srcIp, srcPort, dstIp, dstPort)
+        callback(domain, uid)
+    }
+
+    private fun resolveOwnerUid(protocol: Int, srcIp: Int, srcPort: Int, dstIp: Int, dstPort: Int): Int {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return INVALID_UID
+        return try {
+            val local = InetSocketAddress(intToIp(srcIp), srcPort)
+            val remote = InetSocketAddress(intToIp(dstIp), dstPort)
+            connectivityManager.getConnectionOwnerUid(protocol, local, remote)
+        } catch (_: Exception) {
+            INVALID_UID
+        }
+    }
+
+    private fun sendRst(srcIp: Int, dstIp: Int, srcPort: Int, dstPort: Int, seq: Long, ack: Long) {
+        writeTcpPacket(srcIp, dstIp, srcPort, dstPort,
+            seq, ack, 0x14.toByte(), 0, ByteArray(0), 0)
     }
 
     private fun extractHttpHost(data: ByteArray, offset: Int, len: Int): String? {
@@ -292,6 +337,11 @@ class TunForwarder(
         if (qdcount == 0) return false
         val domain = extractDnsName(query, 12) ?: return false
         val domainLower = domain.lowercase()
+
+        // DNS queries usually go through the device's shared system resolver, so uid
+        // attribution is unreliable here — still worth reporting the domain itself.
+        reportObservedDomain(domainLower, PROTO_UDP, srcIp, srcPort, dstIp, dstPort)
+
         val matched = currentBlockedDomains.any { blocked ->
             domainLower == blocked || domainLower.endsWith(".$blocked")
         }
@@ -299,6 +349,7 @@ class TunForwarder(
         Log.i(TAG, "Blocked DNS query for $domain")
         val resp = buildDnsNxdomain(query)
         writeUdpPacket(dstIp, srcIp, dstPort, srcPort, resp, resp.size)
+        onBlocked?.invoke("dns_blocked", domainLower, intToIp(dstIp), dstPort)
         return true
     }
 
@@ -379,8 +430,13 @@ class TunForwarder(
         if (len < ihl + udpLen) return
         val payload = buf.copyOfRange(ihl + 8, ihl + udpLen)
 
-        if (dstPort == 53 && currentBlockedDomains.isNotEmpty()) {
+        if (dstPort == 53) {
             if (handleDnsQuery(payload, srcIp, dstIp, srcPort, dstPort)) return
+        }
+
+        if (dstPort == 443 && currentBlockedDomains.isNotEmpty()) {
+            Log.i(TAG, "Blocked UDP:443 to ${intToIp(dstIp)} (forcing TCP fallback)")
+            return
         }
 
         val udpId = dstPort % 10000 + (Math.abs(dstIp) % 255) * 10000
@@ -540,5 +596,8 @@ class TunForwarder(
 
     companion object {
         private const val TAG = "TunForwarder"
+        private const val PROTO_TCP = 6
+        private const val PROTO_UDP = 17
+        private const val INVALID_UID = -1
     }
 }

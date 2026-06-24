@@ -19,7 +19,7 @@
         .nav-actions { display: flex; align-items: center; gap: 12px; color: #51615b; font-size: 14px; }
         .button, button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; padding: 0 16px; background: #17483f; color: #ffffff; font-weight: 700; cursor: pointer; font: inherit; }
         .button.secondary, button.secondary { background: #e7eeeb; color: #17483f; }
-        .button.danger, button.danger { background: #8f2f2f; color: #ffffff; }
+        .button.danger, button.danger { background: #8f2f2f; color: #ffffff; } button.compact, .button.compact { min-height: 34px; padding: 0 12px; font-size: 13px; }
         main { width: min(1120px, calc(100% - 32px)); margin: 32px auto; }
         .auth-page { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 480px); }
         .auth-visual { padding: 56px; background: #17483f; color: #ffffff; display: flex; flex-direction: column; justify-content: space-between; }
@@ -31,7 +31,7 @@
         .page-title { display: flex; justify-content: space-between; align-items: start; gap: 20px; margin-bottom: 24px; }
         .login-box .muted, .page-title p, .muted { color: #64736d; line-height: 1.5; }
         label { display: block; margin: 18px 0 8px; font-size: 14px; font-weight: 700; }
-        input[type="text"], input[type="email"], input[type="password"], select, textarea { width: 100%; min-height: 46px; border: 1px solid #cfd9d5; border-radius: 8px; padding: 0 12px; background: #ffffff; font: inherit; }
+        input[type="text"], input[type="email"], input[type="password"], input[type="time"], input[type="number"], select, textarea { width: 100%; min-height: 46px; border: 1px solid #cfd9d5; border-radius: 8px; padding: 0 12px; background: #ffffff; font: inherit; }
         textarea { min-height: 90px; padding-top: 10px; resize: vertical; }
         .error { margin-top: 8px; color: #a83232; font-size: 14px; }
         .flash { margin: 0 0 18px; border: 1px solid #b7d7cd; background: #e9f6f1; color: #17483f; border-radius: 8px; padding: 12px 14px; font-weight: 700; }
@@ -51,11 +51,11 @@
         .status { display: inline-flex; align-items: center; min-height: 24px; border-radius: 999px; padding: 0 10px; font-size: 12px; font-weight: 800; background: #e7eeeb; color: #17483f; }
         .status.offline { background: #f1e4e4; color: #883636; }
         .rule-list { display: grid; gap: 10px; }
-        .rule-item { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center; border: 1px solid #edf2ef; border-radius: 8px; padding: 12px; }
+        .rule-item { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center; border: 1px solid #edf2ef; border-radius: 8px; padding: 12px; } .rule-item .muted { display: block; } .rule-actions { justify-content: flex-end; } .control-panel { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-top: 16px; } .control-panel p { margin: 6px 0 0; } .checkbox-line { display: flex; align-items: center; gap: 10px; margin: 12px 0; color: #51615b; } .weekday-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin: 10px 0 4px; } .weekday-grid label { min-height: 34px; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 0; border: 1px solid #dfe7e3; border-radius: 8px; background: #f8fbfa; font-size: 12px; }
         .rule-item strong { display: block; margin-bottom: 4px; }
         .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         .pagination { margin-top: 16px; color: #64736d; font-size: 14px; }
-        @media (max-width: 900px) { .topbar { align-items: flex-start; flex-direction: column; padding: 16px; } .page-title, .nav-actions { flex-direction: column; align-items: flex-start; } .stats, .two-col, .form-grid { grid-template-columns: 1fr; } }
+        @media (max-width: 900px) { .topbar { align-items: flex-start; flex-direction: column; padding: 16px; } .page-title, .nav-actions, .control-panel { flex-direction: column; align-items: flex-start; } .stats, .two-col, .form-grid { grid-template-columns: 1fr; } .weekday-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } .rule-item { grid-template-columns: 1fr; } .rule-actions { justify-content: flex-start; } }
         @media (max-width: 820px) { .auth-page { grid-template-columns: 1fr; } .auth-visual { min-height: 300px; padding: 32px; } main { margin: 20px auto; } }
     </style>
 </head>

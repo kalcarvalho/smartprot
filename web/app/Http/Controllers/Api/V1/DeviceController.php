@@ -29,6 +29,7 @@ class DeviceController extends Controller
         $device->policies()->create([
             'version' => 1,
             'rules' => [],
+            'settings' => ['protection_enabled' => true],
         ]);
 
         return response()->json([
@@ -70,12 +71,73 @@ class DeviceController extends Controller
         }
 
         $policy = $device->policies()->latest('version')->firstOrFail();
+        $settings = [
+            'protection_enabled' => true,
+            ...($policy->settings ?? []),
+        ];
+
+        // Grouped in PHP rather than via a DB-specific aggregate (e.g. Postgres'
+        // json_agg) so this works the same on SQLite (tests) and Postgres (Docker).
+        $appDomains = \App\Models\AppDomainMapping::query()
+            ->orderBy('domain')
+            ->get(['app_package', 'domain'])
+            ->groupBy('app_package')
+            ->map(fn ($rows) => $rows->pluck('domain')->values())
+            ->toArray();
 
         return response()->json([
             'device_id' => $device->public_id,
             'version' => $policy->version,
-            'rules' => $policy->rules,
+            'protection_enabled' => (bool) $settings['protection_enabled'],
+            'settings' => $settings,
+            'rules' => $settings['protection_enabled'] ? $policy->rules : [],
+            'app_domains' => $appDomains,
         ]);
+    }
+
+    public function storeDomains(Request $request, Device $device): JsonResponse
+    {
+        if (! $this->isAuthorized($request, $device)) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        $data = $request->validate([
+            'domains' => ['required', 'array', 'max:200'],
+            'domains.*' => ['required', 'string', 'max:255'],
+            'app_package' => ['nullable', 'string', 'max:190'],
+        ]);
+
+        $now = now();
+        $appPackage = $data['app_package'] ?? null;
+        $inserted = 0;
+
+        foreach ($data['domains'] as $domain) {
+            $domain = strtolower(trim($domain));
+            if (empty($domain)) continue;
+
+            $existing = $device->domains()->where('domain', $domain)->first();
+            if ($existing) {
+                $existing->increment('seen_count');
+                $existing->forceFill(['last_seen' => $now])->save();
+                if ($appPackage && !$existing->app_package) {
+                    $existing->forceFill(['app_package' => $appPackage])->save();
+                }
+            } else {
+                $device->domains()->create([
+                    'domain' => $domain,
+                    'app_package' => $appPackage,
+                    'seen_count' => 1,
+                    'first_seen' => $now,
+                    'last_seen' => $now,
+                ]);
+            }
+            $inserted++;
+        }
+
+        return response()->json([
+            'accepted' => true,
+            'inserted' => $inserted,
+        ], 202);
     }
 
     public function storeEvent(Request $request, Device $device): JsonResponse

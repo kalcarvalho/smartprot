@@ -1,4 +1,4 @@
-package com.smartprot.data.api
+package com.sysfactor.apps.smartprot.data.api
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec

@@ -1,14 +1,15 @@
-package com.smartprot.data.repository
+package com.sysfactor.apps.smartprot.data.repository
 
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
-import com.smartprot.data.api.ApiClient
-import com.smartprot.data.model.EventRequest
-import com.smartprot.data.model.HeartbeatRequest
-import com.smartprot.data.model.PolicyResponse
-import com.smartprot.data.model.RegisterRequest
-import com.smartprot.data.model.RegisterResponse
+import com.sysfactor.apps.smartprot.data.api.ApiClient
+import com.sysfactor.apps.smartprot.data.model.DomainsRequest
+import com.sysfactor.apps.smartprot.data.model.EventRequest
+import com.sysfactor.apps.smartprot.data.model.HeartbeatRequest
+import com.sysfactor.apps.smartprot.data.model.PolicyResponse
+import com.sysfactor.apps.smartprot.data.model.RegisterRequest
+import com.sysfactor.apps.smartprot.data.model.RegisterResponse
 
 class DeviceRepository(context: Context) {
 
@@ -64,6 +65,22 @@ class DeviceRepository(context: Context) {
             val deviceId = auth.getDeviceId() ?: return
             val request = EventRequest(type = type, payload = payload)
             api.storeEvent(deviceId, request)
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * Reports domains observed on the device's traffic so the parent panel can
+     * surface them for blocking or association with an app. [appPackage] groups
+     * every domain in this call under the same app (or null if it couldn't be
+     * attributed to a specific app, e.g. domains seen via DNS only).
+     */
+    suspend fun reportDomains(domains: List<String>, appPackage: String?) {
+        if (domains.isEmpty()) return
+        try {
+            val deviceId = auth.getDeviceId() ?: return
+            val request = DomainsRequest(domains = domains, appPackage = appPackage)
+            api.storeDomains(deviceId, request)
         } catch (_: Exception) {
         }
     }

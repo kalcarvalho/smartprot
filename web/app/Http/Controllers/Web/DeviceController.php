@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
 use App\Models\Device;
+use App\Models\DeviceEvent;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -14,7 +15,10 @@ class DeviceController extends Controller
     public function index(Request $request): View
     {
         $devices = Device::query()
-            ->where('user_id', $request->user()->id)
+            ->where(function ($query) use ($request) {
+                $query->where('user_id', $request->user()->id)
+                    ->orWhereNull('user_id');
+            })
             ->withMax('policies', 'version')
             ->latest('updated_at')
             ->paginate(12);
@@ -49,6 +53,7 @@ class DeviceController extends Controller
         $device->policies()->create([
             'version' => 1,
             'rules' => [],
+            'settings' => ['protection_enabled' => true],
         ]);
 
         return redirect()
@@ -57,16 +62,46 @@ class DeviceController extends Controller
             ->with('status', 'Smartphone registrado. Guarde o token de pareamento.');
     }
 
+    public function claim(Request $request, Device $device): RedirectResponse
+    {
+        abort_unless($device->user_id === null, 404);
+
+        $device->forceFill(['user_id' => $request->user()->id])->save();
+
+        return redirect()
+            ->route('devices.show', $device)
+            ->with('status', 'Smartphone vinculado a sua conta.');
+    }
+
+    public function events(Request $request, Device $device): View
+    {
+        abort_unless($device->user_id === null || $device->user_id === $request->user()->id, 404);
+
+        $events = $device->events()
+            ->latest('occurred_at')
+            ->paginate(50);
+
+        return view('devices.events', [
+            'device' => $device,
+            'events' => $events,
+        ]);
+    }
+
     public function show(Request $request, Device $device): View
     {
-        abort_unless($device->user_id === $request->user()->id, 404);
+        abort_unless($device->user_id === null || $device->user_id === $request->user()->id, 404);
 
         $device->load(['events' => fn ($query) => $query->latest('occurred_at')->limit(10)]);
         $policy = $device->latestPolicy();
+        $settings = [
+            'protection_enabled' => true,
+            ...($policy?->settings ?? []),
+        ];
 
         return view('devices.show', [
             'device' => $device,
             'policy' => $policy,
+            'settings' => $settings,
             'rules' => collect($policy?->rules ?? []),
         ]);
     }

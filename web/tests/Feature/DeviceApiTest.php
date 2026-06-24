@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AppDomainMapping;
 use App\Models\Device;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -31,6 +32,38 @@ class DeviceApiTest extends TestCase
             ->assertJson([
                 'device_id' => $deviceId,
                 'version' => 1,
+                'protection_enabled' => true,
+                'rules' => [],
+            ]);
+    }
+
+    public function test_disabled_protection_returns_empty_rules_to_device(): void
+    {
+        $device = Device::create([
+            'public_id' => 'dev_paused',
+            'name' => 'Child phone',
+            'platform' => 'android',
+            'device_fingerprint' => 'fingerprint-paused',
+            'token_hash' => hash('sha256', 'secret-token'),
+        ]);
+
+        $device->policies()->create([
+            'version' => 1,
+            'settings' => ['protection_enabled' => false],
+            'rules' => [[
+                'id' => 'rule-1',
+                'type' => 'domain',
+                'target' => 'tiktok.com',
+                'network' => 'blocked',
+                'enabled' => true,
+            ]],
+        ]);
+
+        $this->withToken('secret-token')
+            ->getJson('/api/v1/devices/dev_paused/policy')
+            ->assertOk()
+            ->assertJson([
+                'protection_enabled' => false,
                 'rules' => [],
             ]);
     }
@@ -45,7 +78,7 @@ class DeviceApiTest extends TestCase
             'token_hash' => hash('sha256', 'secret-token'),
         ]);
 
-        $device->policies()->create(['version' => 1, 'rules' => []]);
+        $device->policies()->create(['version' => 1, 'rules' => [], 'settings' => ['protection_enabled' => true]]);
 
         $this->getJson('/api/v1/devices/dev_test/policy')
             ->assertUnauthorized();
@@ -85,5 +118,72 @@ class DeviceApiTest extends TestCase
         $this->assertDatabaseHas('device_events', [
             'type' => 'traffic_blocked',
         ]);
+    }
+
+    public function test_policy_response_includes_app_domains_mapping(): void
+    {
+        AppDomainMapping::create(['app_package' => 'org.telegram.messenger', 'domain' => 't.me']);
+        AppDomainMapping::create(['app_package' => 'org.telegram.messenger', 'domain' => 'telegram.org']);
+        AppDomainMapping::create(['app_package' => 'com.google.android.youtube', 'domain' => 'youtube.com']);
+
+        $device = Device::create([
+            'public_id' => 'dev_appdomains',
+            'name' => 'Child phone',
+            'platform' => 'android',
+            'device_fingerprint' => 'fingerprint-appdomains',
+            'token_hash' => hash('sha256', 'secret-token'),
+        ]);
+        $device->policies()->create(['version' => 1, 'rules' => [], 'settings' => ['protection_enabled' => true]]);
+
+        $response = $this->withToken('secret-token')
+            ->getJson('/api/v1/devices/dev_appdomains/policy')
+            ->assertOk();
+
+        $appDomains = $response->json('app_domains');
+
+        $this->assertSame(['t.me', 'telegram.org'], $appDomains['org.telegram.messenger']);
+        $this->assertSame(['youtube.com'], $appDomains['com.google.android.youtube']);
+    }
+
+    public function test_device_can_report_observed_domains(): void
+    {
+        $device = Device::create([
+            'public_id' => 'dev_observe',
+            'name' => 'Child phone',
+            'platform' => 'android',
+            'device_fingerprint' => 'fingerprint-observe',
+            'token_hash' => hash('sha256', 'secret-token'),
+        ]);
+        $device->policies()->create(['version' => 1, 'rules' => [], 'settings' => ['protection_enabled' => true]]);
+
+        $this->withToken('secret-token')
+            ->postJson('/api/v1/devices/dev_observe/domains', [
+                'domains' => ['t.me', 'telegram.org'],
+                'app_package' => 'org.telegram.messenger',
+            ])
+            ->assertAccepted()
+            ->assertJson(['accepted' => true, 'inserted' => 2]);
+
+        $this->assertDatabaseHas('device_domains', [
+            'device_id' => $device->id,
+            'domain' => 't.me',
+            'app_package' => 'org.telegram.messenger',
+            'seen_count' => 1,
+        ]);
+
+        // Reporting the same domain again increments seen_count instead of duplicating.
+        $this->withToken('secret-token')
+            ->postJson('/api/v1/devices/dev_observe/domains', [
+                'domains' => ['t.me'],
+                'app_package' => 'org.telegram.messenger',
+            ])
+            ->assertAccepted();
+
+        $this->assertDatabaseHas('device_domains', [
+            'device_id' => $device->id,
+            'domain' => 't.me',
+            'seen_count' => 2,
+        ]);
+        $this->assertSame(1, $device->domains()->where('domain', 't.me')->count());
     }
 }

@@ -1,7 +1,7 @@
-package com.smartprot.data.api
+package com.sysfactor.apps.smartprot.data.api
 
 import android.content.Context
-import com.smartprot.BuildConfig
+import com.sysfactor.apps.smartprot.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit

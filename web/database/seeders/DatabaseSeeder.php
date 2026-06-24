@@ -26,5 +26,7 @@ class DatabaseSeeder extends Seeder
                 'password' => Hash::make($adminPassword),
             ]
         );
+
+        $this->call(AppDomainMappingSeeder::class);
     }
 }

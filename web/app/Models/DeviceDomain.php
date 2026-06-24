@@ -6,32 +6,30 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class Policy extends Model
+class DeviceDomain extends Model
 {
     use HasFactory;
 
     protected $fillable = [
         'device_id',
-        'version',
-        'rules',
-        'settings',
+        'domain',
+        'app_package',
+        'seen_count',
+        'first_seen',
+        'last_seen',
     ];
 
     protected function casts(): array
     {
         return [
-            'rules' => 'array',
-            'settings' => 'array',
+            'seen_count' => 'integer',
+            'first_seen' => 'datetime',
+            'last_seen' => 'datetime',
         ];
     }
 
     public function device(): BelongsTo
     {
         return $this->belongsTo(Device::class);
-    }
-
-    public function protectionEnabled(): bool
-    {
-        return (bool) ($this->settings['protection_enabled'] ?? true);
     }
 }

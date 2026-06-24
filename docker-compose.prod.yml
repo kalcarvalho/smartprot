@@ -1,0 +1,59 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: smartprot-app
+    restart: unless-stopped
+    working_dir: /var/www/html
+    ports:
+      - "127.0.0.1:${SMARTPROT_APP_PORT:-8082}:8000"
+    volumes:
+      - ./web:/var/www/html
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: ${SMARTPROT_APP_URL:?Set SMARTPROT_APP_URL in .env}
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: ${SMARTPROT_DB_DATABASE:?Set SMARTPROT_DB_DATABASE in .env}
+      DB_USERNAME: ${SMARTPROT_DB_USERNAME:?Set SMARTPROT_DB_USERNAME in .env}
+      DB_PASSWORD: ${SMARTPROT_DB_PASSWORD:?Set SMARTPROT_DB_PASSWORD in .env}
+      SESSION_DRIVER: database
+      CACHE_STORE: database
+      QUEUE_CONNECTION: database
+      SMARTPROT_ADMIN_EMAIL: ${SMARTPROT_ADMIN_EMAIL:?Set SMARTPROT_ADMIN_EMAIL in .env}
+      SMARTPROT_ADMIN_PASSWORD: ${SMARTPROT_ADMIN_PASSWORD:?Set SMARTPROT_ADMIN_PASSWORD in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      sh -lc "mkdir -p bootstrap/cache storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && chmod -R 775 bootstrap/cache storage && composer install --no-dev --optimize-autoloader &&
+      { [ -f .env ] || cp .env.example .env; } &&
+      { grep -q '^APP_KEY=base64:' .env || php artisan key:generate --force --no-interaction; } &&
+      php artisan migrate --force &&
+      php artisan db:seed --force &&
+      php artisan config:clear &&
+      php artisan route:clear &&
+      php artisan view:clear &&
+      php artisan serve --host=0.0.0.0 --port=8000"
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: smartprot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${SMARTPROT_DB_DATABASE:?Set SMARTPROT_DB_DATABASE in .env}
+      POSTGRES_USER: ${SMARTPROT_DB_USERNAME:?Set SMARTPROT_DB_USERNAME in .env}
+      POSTGRES_PASSWORD: ${SMARTPROT_DB_PASSWORD:?Set SMARTPROT_DB_PASSWORD in .env}
+    volumes:
+      - smartprot-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  smartprot-postgres-data:

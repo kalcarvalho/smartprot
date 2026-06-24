@@ -11,6 +11,8 @@
                 <a class="button" href="{{ route('devices.create') }}">Registrar smartphone</a>
             </section>
 
+            @if (session('status')) <div class="flash">{{ session('status') }}</div> @endif
+
             <section class="grid stats">
                 <div class="stat"><span>Smartphones</span><strong>{{ $deviceCount }}</strong></div>
                 <div class="stat"><span>Online agora</span><strong>{{ $onlineDeviceCount }}</strong></div>
@@ -22,18 +24,28 @@
                 <div class="panel">
                     <h2>Smartphones recentes</h2>
                     <table>
-                        <thead><tr><th>Nome</th><th>Plataforma</th><th>Status</th><th>Politica</th></tr></thead>
+                        <thead><tr><th>Nome</th><th>Status</th><th>Bloqueio</th><th>Politica</th><th></th></tr></thead>
                         <tbody>
                             @forelse ($recentDevices as $device)
                                 @php($online = $device->last_seen_at && $device->last_seen_at->gte(now()->subMinutes(5)))
+                                @php($latestPolicy = $device->latestPolicy())
+                                @php($protectionEnabled = (bool) ($latestPolicy?->settings['protection_enabled'] ?? true))
                                 <tr>
                                     <td><a href="{{ route('devices.show', $device) }}"><strong>{{ $device->name }}</strong></a><br><span class="muted">{{ $device->public_id }}</span></td>
-                                    <td>{{ $device->platform }}</td>
                                     <td><span class="status {{ $online ? '' : 'offline' }}">{{ $online ? 'Online' : 'Offline' }}</span></td>
-                                    <td>{{ $device->last_policy_version ?? '-' }}</td>
+                                    <td><span class="status {{ $protectionEnabled ? '' : 'offline' }}">{{ $protectionEnabled ? 'Ativo' : 'Pausado' }}</span></td>
+                                    <td>{{ $latestPolicy?->version ?? '-' }}</td>
+                                    <td>
+                                        <form method="post" action="{{ route('devices.protection.update', $device) }}">
+                                            @csrf
+                                            @method('patch')
+                                            <input type="hidden" name="protection_enabled" value="{{ $protectionEnabled ? 0 : 1 }}">
+                                            <button class="secondary compact" type="submit">{{ $protectionEnabled ? 'Pausar' : 'Ativar' }}</button>
+                                        </form>
+                                    </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="4" class="muted">Nenhum smartphone registrado ainda.</td></tr>
+                                <tr><td colspan="5" class="muted">Nenhum smartphone registrado ainda.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

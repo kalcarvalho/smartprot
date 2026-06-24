@@ -1,4 +1,4 @@
-package com.smartprot.worker
+package com.sysfactor.apps.smartprot.worker
 
 import android.content.Context
 import android.net.ConnectivityManager
@@ -13,8 +13,8 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
-import com.smartprot.data.repository.DeviceRepository
-import com.smartprot.service.PolicyVpnService
+import com.sysfactor.apps.smartprot.data.repository.DeviceRepository
+import com.sysfactor.apps.smartprot.service.PolicyVpnService
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.TimeUnit
 

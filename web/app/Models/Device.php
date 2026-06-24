@@ -51,4 +51,9 @@ class Device extends Model
     {
         return $this->policies()->latest('version')->first();
     }
+
+    public function domains(): HasMany
+    {
+        return $this->hasMany(DeviceDomain::class);
+    }
 }

@@ -1,4 +1,4 @@
-package com.smartprot.ui
+package com.sysfactor.apps.smartprot.ui
 
 import android.app.AlertDialog
 import android.content.Intent
@@ -14,16 +14,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.switchmaterial.SwitchMaterial
-import com.google.gson.Gson
-import com.smartprot.R
-import com.smartprot.data.repository.DeviceRepository
-import com.smartprot.service.PolicyVpnService
-import com.smartprot.worker.HeartbeatWorker
-import com.smartprot.worker.PolicySyncWorker
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
+import com.sysfactor.apps.smartprot.R
+import com.sysfactor.apps.smartprot.data.repository.DeviceRepository
+import com.sysfactor.apps.smartprot.service.PolicyVpnService
+import com.sysfactor.apps.smartprot.worker.HeartbeatWorker
+import com.sysfactor.apps.smartprot.worker.PolicySyncWorker
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
@@ -51,22 +47,6 @@ class MainActivity : AppCompatActivity() {
             startBackgroundWorkers()
             if (!PolicyVpnService.isRunning.value) {
                 requestVpnPermission()
-            }
-            GlobalScope.launch {
-                repo.syncPolicy().fold(
-                    onSuccess = { policy ->
-                        if (!PolicyVpnService.isRunning.value) return@fold
-                        val rulesJson = Gson().toJson(policy.rules)
-                        val intent = Intent(this@MainActivity, PolicyVpnService::class.java).apply {
-                            action = PolicyVpnService.ACTION_UPDATE_RULES
-                            putExtra(PolicyVpnService.EXTRA_RULES_JSON, rulesJson)
-                        }
-                        withContext(Dispatchers.Main) {
-                            startService(intent)
-                        }
-                    },
-                    onFailure = { /* workers will retry */ }
-                )
             }
             finishAfterTransition()
         } else {
@@ -142,6 +122,9 @@ class MainActivity : AppCompatActivity() {
                             val intent = Intent(this@MainActivity, PolicyVpnService::class.java).apply {
                                 action = PolicyVpnService.ACTION_UPDATE_RULES
                                 putExtra(PolicyVpnService.EXTRA_RULES_JSON, rulesJson)
+                                policy.appDomains?.let { appDomains ->
+                                    putExtra(PolicyVpnService.EXTRA_APP_DOMAINS_JSON, com.google.gson.Gson().toJson(appDomains))
+                                }
                             }
                             startService(intent)
                         }

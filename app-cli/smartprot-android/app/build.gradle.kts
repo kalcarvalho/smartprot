@@ -4,17 +4,17 @@ plugins {
 }
 
 android {
-    namespace = "com.smartprot"
+    namespace = "com.sysfactor.apps.smartprot"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.smartprot.client"
+        applicationId = "com.sysfactor.apps.smartprot"
         minSdk = 28
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
 
-        buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8081/api/v1/\"")
+        buildConfigField("String", "API_BASE_URL", "\"http://192.168.1.152:8081/api/v1/\"")
         buildConfigField("long", "HEARTBEAT_INTERVAL_MINUTES", "15L")
         buildConfigField("long", "POLICY_SYNC_INTERVAL_MINUTES", "5L")
     }

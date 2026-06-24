@@ -8,4 +8,5 @@ Route::prefix('v1')->group(function (): void {
     Route::post('/devices/{device:public_id}/heartbeat', [DeviceController::class, 'heartbeat']);
     Route::get('/devices/{device:public_id}/policy', [DeviceController::class, 'policy']);
     Route::post('/devices/{device:public_id}/events', [DeviceController::class, 'storeEvent']);
+    Route::post('/devices/{device:public_id}/domains', [DeviceController::class, 'storeDomains']);
 });
