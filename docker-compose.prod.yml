@@ -30,7 +30,7 @@ services:
         condition: service_healthy
     command: >
       sh -lc "mkdir -p bootstrap/cache storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs && chmod -R 775 bootstrap/cache storage && composer install --no-dev --optimize-autoloader &&
-      { [ -f .env ] || cp .env.example .env; } &&
+      printf "APP_NAME=SmartProt\nAPP_ENV=production\nAPP_KEY=\nAPP_DEBUG=false\nAPP_URL=%s\nAPP_LOCALE=pt_BR\nAPP_FALLBACK_LOCALE=en\nAPP_FAKER_LOCALE=pt_BR\nLOG_CHANNEL=stack\nLOG_STACK=single\nLOG_LEVEL=error\nDB_CONNECTION=pgsql\nDB_HOST=postgres\nDB_PORT=5432\nDB_DATABASE=%s\nDB_USERNAME=%s\nDB_PASSWORD=%s\nSESSION_DRIVER=database\nSESSION_LIFETIME=120\nCACHE_STORE=database\nQUEUE_CONNECTION=database\nMAIL_MAILER=log\nSMARTPROT_ADMIN_NAME=SmartProt Admin\nSMARTPROT_ADMIN_EMAIL=%s\nSMARTPROT_ADMIN_PASSWORD=%s\n" "$$APP_URL" "$$DB_DATABASE" "$$DB_USERNAME" "$$DB_PASSWORD" "$$SMARTPROT_ADMIN_EMAIL" "$$SMARTPROT_ADMIN_PASSWORD" > .env &&
       { grep -q '^APP_KEY=base64:' .env || php artisan key:generate --force --no-interaction; } &&
       php artisan migrate --force &&
       php artisan db:seed --force &&

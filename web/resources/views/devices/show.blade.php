@@ -31,10 +31,63 @@
                 <div class="stat"><span>Icone do app</span><strong>{{ ($settings['app_icon_visible'] ?? true) ? 'Visivel' : 'Oculto' }}</strong></div>
             </section>
 
+            <section class="panel" style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:16px;padding:1.25rem;">
+                <span class="muted">Proximo sync de politica esperado</span>
+                <strong id="policy-sync-countdown" style="font-size:32px;font-family:monospace;"
+                    data-last-sync="{{ $lastPolicySync?->toISOString() }}"
+                    data-interval-minutes="{{ $policySyncIntervalMinutes }}"
+                    data-server-now="{{ now()->toISOString() }}">--:--</strong>
+                <span id="policy-sync-state" class="muted">
+                    {{ $lastPolicySync ? 'Ultimo sync aplicado '.$lastPolicySync->diffForHumans() : 'Nenhum sync de politica registrado ainda' }}
+                </span>
+                <span class="muted" style="font-size:12px;text-align:center;max-width:480px;">
+                    Estimativa baseada no intervalo configurado no app ({{ $policySyncIntervalMinutes }} min). O Android pode atrasar a execucao real (bateria, rede, Doze).
+                </span>
+            </section>
+
             <section style="display:flex;gap:8px;margin-bottom:16px;">
                 <a class="button secondary" href="{{ route('devices.events', $device) }}">Ver eventos de rede</a>
                 <a class="button secondary" href="{{ route('devices.domains.index', $device) }}">Ver dominios observados</a>
             </section>
+
+            <script>
+                (function () {
+                    var el = document.getElementById('policy-sync-countdown');
+                    var stateEl = document.getElementById('policy-sync-state');
+                    if (!el) return;
+
+                    var intervalMinutes = parseInt(el.dataset.intervalMinutes, 10) || 5;
+                    var lastSync = el.dataset.lastSync ? new Date(el.dataset.lastSync) : null;
+                    var serverNow = new Date(el.dataset.serverNow);
+                    var clockOffsetMs = Date.now() - serverNow.getTime();
+
+                    if (!lastSync) {
+                        el.textContent = '--:--';
+                        return;
+                    }
+
+                    var nextSyncAt = new Date(lastSync.getTime() + intervalMinutes * 60000);
+
+                    function render() {
+                        var nowAdjusted = new Date(Date.now() - clockOffsetMs);
+                        var remainingMs = nextSyncAt.getTime() - nowAdjusted.getTime();
+
+                        if (remainingMs <= 0) {
+                            el.textContent = '00:00';
+                            stateEl.textContent = 'Janela de sync atingida, aguardando o Android executar o job';
+                            return;
+                        }
+
+                        var totalSeconds = Math.floor(remainingMs / 1000);
+                        var minutes = Math.floor(totalSeconds / 60);
+                        var seconds = totalSeconds % 60;
+                        el.textContent = String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+                    }
+
+                    render();
+                    setInterval(render, 1000);
+                })();
+            </script>
 
             <section class="panel control-panel">
                 <div>

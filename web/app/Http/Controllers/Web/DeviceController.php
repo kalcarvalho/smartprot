@@ -98,11 +98,19 @@ class DeviceController extends Controller
             ...($policy?->settings ?? []),
         ];
 
+        $lastPolicySync = $device->events()
+            ->where('type', 'policy_applied')
+            ->latest('occurred_at')
+            ->first()
+            ?->occurred_at;
+
         return view('devices.show', [
             'device' => $device,
             'policy' => $policy,
             'settings' => $settings,
             'rules' => collect($policy?->rules ?? []),
+            'lastPolicySync' => $lastPolicySync,
+            'policySyncIntervalMinutes' => 5,
         ]);
     }
 }
