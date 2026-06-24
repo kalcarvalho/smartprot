@@ -1,0 +1,17 @@
+# Local environment files
+/.env
+
+# Local runtimes and dependency caches
+/tools/
+
+# Laravel dependencies and local state
+/web/vendor/
+/web/node_modules/
+/web/.env
+/web/database/*.sqlite
+/web/storage/logs/*.log
+/web/.phpunit.result.cache
+
+# Local scratch files
+temp_*.sql
+/web/list_devices.php

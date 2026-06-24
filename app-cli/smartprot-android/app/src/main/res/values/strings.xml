@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SmartProt</string>
+
+    <!-- Pairing -->
+    <string name="device_name_hint">Nome do dispositivo</string>
+    <string name="btn_register">Registrar</string>
+    <string name="error_name_required">Informe um nome para o dispositivo.</string>
+    <string name="registered_success">Dispositivo registrado! Token: %1$s\nCopie este token para o painel de controle.</string>
+    <string name="registration_failed">Falha no registro: %1$s</string>
+
+    <!-- Dashboard -->
+    <string name="device_id_label">ID: %1$s</string>
+    <string name="vpn_toggle">VPN Ativa</string>
+    <string name="btn_sync_policy">Sincronizar Política</string>
+    <string name="btn_unregister">Desregistrar</string>
+    <string name="policy_synced">Política sincronizada.</string>
+    <string name="policy_sync_failed">Falha ao sincronizar política.</string>
+    <string name="vpn_permission_denied">Permissão VPN necessária.</string>
+
+    <!-- Unregister -->
+    <string name="unregister_title">Desregistrar dispositivo?</string>
+    <string name="unregister_message">Isso removerá o vínculo com o painel de controle e interromperá o bloqueio.</string>
+    <string name="yes">Sim</string>
+    <string name="no">Não</string>
+
+    <!-- VPN Service -->
+    <string name="vpn_session_name">SmartProt</string>
+    <string name="channel_vpn_name">SmartProt VPN</string>
+    <string name="channel_vpn_description">Notificação do serviço de bloqueio</string>
+    <string name="notification_vpn_title">SmartProt ativo</string>
+    <string name="notification_vpn_text">Bloqueio de conteúdo em execução</string>
+</resources>

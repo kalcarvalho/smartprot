@@ -1,0 +1,10 @@
+.git
+.gitignore
+AGENTS.md
+web/vendor
+web/node_modules
+web/.env
+web/database/*.sqlite
+web/storage/logs/*.log
+tools
+temp_*.sql
