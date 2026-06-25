@@ -145,6 +145,18 @@
                     @forelse ($rules as $rule)
                         @php($ruleEnabled = (bool) ($rule['enabled'] ?? true))
                         @php($schedule = $rule['schedule'] ?? null)
+                        @php($editPayload = [
+                            'id' => $rule['id'],
+                            'type' => $rule['type'] ?? 'app',
+                            'target' => $rule['target'] ?? '',
+                            'network' => $rule['network'] ?? 'blocked',
+                            'enabled' => $ruleEnabled,
+                            'schedule_days' => $schedule['days'] ?? [],
+                            'starts_at' => $schedule['starts_at'] ?? '',
+                            'ends_at' => $schedule['ends_at'] ?? '',
+                            'daily_limit_minutes' => $rule['daily_limit_minutes'] ?? '',
+                            'notes' => $rule['notes'] ?? '',
+                        ])
                         <div class="rule-item">
                             <div>
                                 <strong>{{ ucfirst($rule['network'] ?? 'blocked') }} · {{ $rule['target'] ?? '-' }}</strong>
@@ -159,18 +171,7 @@
                             </div>
                             <div class="actions rule-actions">
                                 <button type="button" class="secondary compact"
-                                    onclick='window.openRuleModalForEdit(@json([
-                                        "id" => $rule["id"],
-                                        "type" => $rule["type"] ?? "app",
-                                        "target" => $rule["target"] ?? "",
-                                        "network" => $rule["network"] ?? "blocked",
-                                        "enabled" => $ruleEnabled,
-                                        "schedule_days" => $schedule["days"] ?? [],
-                                        "starts_at" => $schedule["starts_at"] ?? "",
-                                        "ends_at" => $schedule["ends_at"] ?? "",
-                                        "daily_limit_minutes" => $rule["daily_limit_minutes"] ?? "",
-                                        "notes" => $rule["notes"] ?? "",
-                                    ])); document.getElementById("rule-modal").showModal();'>Editar</button>
+                                    onclick='window.openRuleModalForEdit(@json($editPayload)); document.getElementById("rule-modal").showModal();'>Editar</button>
                                 <form method="post" action="{{ route('devices.rules.update', [$device, $rule['id']]) }}">
                                     @csrf
                                     @method('patch')

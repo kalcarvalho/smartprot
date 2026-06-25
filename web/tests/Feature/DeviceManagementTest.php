@@ -92,6 +92,31 @@ class DeviceManagementTest extends TestCase
         $this->assertSame(45, $rule['daily_limit_minutes']);
     }
 
+    public function test_device_show_page_renders_with_a_scheduled_rule(): void
+    {
+        $user = User::factory()->create();
+        $device = $this->deviceFor($user);
+        $device->policies()->create([
+            'version' => 1,
+            'settings' => ['protection_enabled' => true],
+            'rules' => [[
+                'id' => 'rule-1',
+                'type' => 'domain',
+                'target' => 'tiktok.com',
+                'network' => 'blocked',
+                'enabled' => true,
+                'schedule' => ['days' => ['mon', 'tue'], 'starts_at' => '08:00', 'ends_at' => '18:00'],
+                'daily_limit_minutes' => 30,
+                'notes' => 'School hours',
+            ]],
+        ]);
+
+        $this->actingAs($user)
+            ->get("/devices/{$device->id}")
+            ->assertOk()
+            ->assertSee('tiktok.com');
+    }
+
     public function test_user_can_pause_device_protection(): void
     {
         $user = User::factory()->create();
