@@ -74,8 +74,9 @@ class PolicyVpnService : VpnService() {
                         Gson().fromJson(domainsJson, domainsType)
                     }
                     val defaultNetwork = intent.getStringExtra(EXTRA_DEFAULT_NETWORK) ?: "allowed"
+                    val protectionEnabled = intent.getBooleanExtra(EXTRA_PROTECTION_ENABLED, true)
 
-                    applyRules(rules, appDomains, defaultNetwork)
+                    applyRules(rules, appDomains, defaultNetwork, protectionEnabled)
                 }
             }
         }
@@ -111,7 +112,7 @@ class PolicyVpnService : VpnService() {
                 val repo = DeviceRepository(this@PolicyVpnService)
                 try {
                     repo.syncPolicy().onSuccess { policy ->
-                        applyRules(policy.rules, policy.appDomains, policy.settings?.defaultNetwork ?: "allowed")
+                        applyRules(policy.rules, policy.appDomains, policy.settings?.defaultNetwork ?: "allowed", policy.settings?.protectionEnabled ?: true)
                     }
                 } catch (_: Exception) {}
             }
@@ -119,14 +120,29 @@ class PolicyVpnService : VpnService() {
     }
 
     private fun stop() {
+        teardownTunnel()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    /**
+     * Closes the TUN interface and the custom packet relay, handing the device
+     * back to direct/native networking, but keeps this foreground service (and
+     * its periodic sync loops) alive so paused protection can resume later
+     * without re-prompting for VPN consent. Pausing protection used to only
+     * clear the rule lists while leaving the hand-rolled TUN relay running for
+     * every connection -- which is slower and less reliable than native
+     * networking even with zero block rules, and looked like YouTube/etc still
+     * being "blocked" despite protection being off.
+     */
+    private fun teardownTunnel() {
         scope.launch { flushObservedDomains() }
         stopForwarder()
         vpnInterface?.close()
         vpnInterface = null
         isRunning.value = false
         saveVpnActive(false)
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        blockedAppPackages.value = emptySet()
     }
 
     private suspend fun syncImmediately() {
@@ -139,7 +155,7 @@ class PolicyVpnService : VpnService() {
             if (synced) break
             try {
                 repo.syncPolicy().onSuccess { policy ->
-                    applyRules(policy.rules, policy.appDomains, policy.settings?.defaultNetwork ?: "allowed")
+                    applyRules(policy.rules, policy.appDomains, policy.settings?.defaultNetwork ?: "allowed", policy.settings?.protectionEnabled ?: true)
                     synced = true
                 }
             } catch (_: Exception) {}
@@ -148,8 +164,8 @@ class PolicyVpnService : VpnService() {
         if (!synced) {
             Log.w(TAG, "Initial policy sync failed after 3 attempts, starting VPN without rules")
             rebuildVpn(emptySet())
+            saveVpnActive(true)
         }
-        saveVpnActive(true)
     }
 
     /** Periodically reports buffered observed domains so the parent panel can show them. */
@@ -242,9 +258,24 @@ class PolicyVpnService : VpnService() {
             .edit().putBoolean(KEY_VPN_ACTIVE, active).apply()
     }
 
-    fun applyRules(rules: List<Rule>, appDomains: Map<String, List<String>>? = null, defaultNetwork: String = "allowed") {
+    fun applyRules(
+        rules: List<Rule>,
+        appDomains: Map<String, List<String>>? = null,
+        defaultNetwork: String = "allowed",
+        protectionEnabled: Boolean = true
+    ) {
         synchronized(vpnLock) {
+            if (!protectionEnabled) {
+                if (vpnInterface != null) {
+                    Log.i(TAG, "Protection paused -- tearing down the TUN tunnel")
+                    teardownTunnel()
+                }
+                currentRules = emptyList()
+                return
+            }
+
             currentRules = rules.filter { !isExpired(it) && isWithinSchedule(it) }
+            saveVpnActive(true)
 
             if (appDomains != null) {
                 serverAppDomains = appDomains.mapValues { (_, domains) ->
@@ -481,6 +512,7 @@ class PolicyVpnService : VpnService() {
         const val EXTRA_RULES_JSON = "rules_json"
         const val EXTRA_APP_DOMAINS_JSON = "app_domains_json"
         const val EXTRA_DEFAULT_NETWORK = "default_network"
+        const val EXTRA_PROTECTION_ENABLED = "protection_enabled"
         private const val CHANNEL_ID = "vpn_service"
         private const val NOTIFICATION_ID = 1
         private const val TAG = "PolicyVpnService"
