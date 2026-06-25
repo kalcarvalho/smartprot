@@ -43,6 +43,9 @@ class PolicyVpnService : VpnService() {
     // applyRules() computed instead of recomputing it from currentRules alone.
     private var resolvedBlockedDomains: Set<String> = emptySet()
     private var resolvedBlockedIps: Set<Int> = emptySet()
+    private var resolvedAllowedDomains: Set<String> = emptySet()
+    private var resolvedAllowedIps: Set<Int> = emptySet()
+    private var resolvedDefaultNetwork: String = "allowed"
 
     // domain -> app package (nullable) observed in traffic, buffered until the next
     // periodic flush reports them to the server via DeviceRepository.reportDomains().
@@ -69,8 +72,9 @@ class PolicyVpnService : VpnService() {
                         val domainsType = object : TypeToken<Map<String, List<String>>>() {}.type
                         Gson().fromJson(domainsJson, domainsType)
                     }
+                    val defaultNetwork = intent.getStringExtra(EXTRA_DEFAULT_NETWORK) ?: "allowed"
 
-                    applyRules(rules, appDomains)
+                    applyRules(rules, appDomains, defaultNetwork)
                 }
             }
         }
@@ -106,7 +110,7 @@ class PolicyVpnService : VpnService() {
                 val repo = DeviceRepository(this@PolicyVpnService)
                 try {
                     repo.syncPolicy().onSuccess { policy ->
-                        applyRules(policy.rules, policy.appDomains)
+                        applyRules(policy.rules, policy.appDomains, policy.settings?.defaultNetwork ?: "allowed")
                     }
                 } catch (_: Exception) {}
             }
@@ -134,7 +138,7 @@ class PolicyVpnService : VpnService() {
             if (synced) break
             try {
                 repo.syncPolicy().onSuccess { policy ->
-                    applyRules(policy.rules, policy.appDomains)
+                    applyRules(policy.rules, policy.appDomains, policy.settings?.defaultNetwork ?: "allowed")
                     synced = true
                 }
             } catch (_: Exception) {}
@@ -192,9 +196,9 @@ class PolicyVpnService : VpnService() {
             .edit().putBoolean(KEY_VPN_ACTIVE, active).apply()
     }
 
-    fun applyRules(rules: List<Rule>, appDomains: Map<String, List<String>>? = null) {
+    fun applyRules(rules: List<Rule>, appDomains: Map<String, List<String>>? = null, defaultNetwork: String = "allowed") {
         synchronized(vpnLock) {
-            currentRules = rules.filter { !isExpired(it) }
+            currentRules = rules.filter { !isExpired(it) && isWithinSchedule(it) }
 
             if (appDomains != null) {
                 serverAppDomains = appDomains.mapValues { (_, domains) ->
@@ -206,14 +210,26 @@ class PolicyVpnService : VpnService() {
                 .filter { it.type == "app" && it.network == "blocked" }
                 .map { it.target }
                 .toSet()
+            val allowedApps = currentRules
+                .filter { it.type == "app" && it.network == "allowed" }
+                .map { it.target }
+                .toSet()
 
             val blockedDomains = currentRules
-                .filter { it.type == "domain" && it.network == "blocked" }
+                .filter { (it.type == "domain" || it.type == "url") && it.network == "blocked" }
+                .map { it.target.lowercase() }
+                .toMutableSet()
+            val allowedDomains = currentRules
+                .filter { (it.type == "domain" || it.type == "url") && it.network == "allowed" }
                 .map { it.target.lowercase() }
                 .toMutableSet()
 
             val blockedIps = currentRules
                 .filter { it.type == "ip" && it.network == "blocked" }
+                .mapNotNull { ipToInt(it.target) }
+                .toMutableSet()
+            val allowedIps = currentRules
+                .filter { it.type == "ip" && it.network == "allowed" }
                 .mapNotNull { ipToInt(it.target) }
                 .toMutableSet()
 
@@ -224,16 +240,23 @@ class PolicyVpnService : VpnService() {
                 KNOWN_APP_DOMAINS[appPkg]?.let { blockedDomains.addAll(it) }
                 serverAppDomains[appPkg]?.let { blockedDomains.addAll(it) }
             }
+            for (appPkg in allowedApps) {
+                KNOWN_APP_DOMAINS[appPkg]?.let { allowedDomains.addAll(it) }
+                serverAppDomains[appPkg]?.let { allowedDomains.addAll(it) }
+            }
 
             resolvedBlockedDomains = blockedDomains
             resolvedBlockedIps = blockedIps
+            resolvedAllowedDomains = allowedDomains
+            resolvedAllowedIps = allowedIps
+            resolvedDefaultNetwork = defaultNetwork
 
             if (vpnInterface == null || blockedApps != blockedAppPackages.value) {
                 rebuildVpn(blockedApps)
             }
-            forwarder?.updateRules(blockedDomains, blockedIps)
+            forwarder?.updateRules(blockedDomains, blockedIps, allowedDomains, allowedIps, defaultNetwork)
             blockedAppPackages.value = blockedApps
-            Log.i(TAG, "Rules updated: ${blockedApps.size} apps, ${blockedDomains.size} domains, ${blockedIps.size} IPs")
+            Log.i(TAG, "Rules updated: ${blockedApps.size} apps, ${blockedDomains.size} domains, ${blockedIps.size} IPs, default=$defaultNetwork")
         }
     }
 
@@ -278,6 +301,9 @@ class PolicyVpnService : VpnService() {
         // which previously dropped that expansion on every VPN rebuild.
         val blockedDomains = resolvedBlockedDomains
         val blockedIps = resolvedBlockedIps
+        val allowedDomains = resolvedAllowedDomains
+        val allowedIps = resolvedAllowedIps
+        val defaultNetwork = resolvedDefaultNetwork
 
         val repo = DeviceRepository(this)
 
@@ -286,6 +312,9 @@ class PolicyVpnService : VpnService() {
                 connectivityManager = cm,
                 blockedDomains = blockedDomains,
                 blockedIps = blockedIps,
+                allowedDomains = allowedDomains,
+                allowedIps = allowedIps,
+                defaultNetwork = defaultNetwork,
                 onBlocked = { type, target, ip, port ->
                     kotlinx.coroutines.runBlocking {
                         repo.reportEvent("connection_$type", mapOf(
@@ -313,6 +342,50 @@ class PolicyVpnService : VpnService() {
             java.time.Instant.parse(rule.until).isBefore(java.time.Instant.now())
         } catch (_: Exception) {
             false
+        }
+    }
+
+    /**
+     * Evaluated against the device's own local clock/timezone -- a schedule of
+     * "00:00-05:59" means that window wherever the device physically is, not a
+     * server-side timezone. Re-checked on every policy sync (currently every
+     * minute while the VPN is running), so a rule activates/deactivates within
+     * that resolution without needing a fresh server policy.
+     */
+    private fun isWithinSchedule(rule: Rule): Boolean {
+        val schedule = rule.schedule ?: return true
+        val now = java.time.LocalDateTime.now()
+
+        val days = schedule.days
+        if (!days.isNullOrEmpty()) {
+            val dayCode = when (now.dayOfWeek) {
+                java.time.DayOfWeek.MONDAY -> "mon"
+                java.time.DayOfWeek.TUESDAY -> "tue"
+                java.time.DayOfWeek.WEDNESDAY -> "wed"
+                java.time.DayOfWeek.THURSDAY -> "thu"
+                java.time.DayOfWeek.FRIDAY -> "fri"
+                java.time.DayOfWeek.SATURDAY -> "sat"
+                java.time.DayOfWeek.SUNDAY -> "sun"
+            }
+            if (dayCode !in days) return false
+        }
+
+        val startsAt = schedule.startsAt
+        val endsAt = schedule.endsAt
+        if (startsAt == null || endsAt == null) return true
+
+        return try {
+            val start = java.time.LocalTime.parse(startsAt)
+            val end = java.time.LocalTime.parse(endsAt)
+            val nowTime = now.toLocalTime()
+            if (!start.isAfter(end)) {
+                !nowTime.isBefore(start) && !nowTime.isAfter(end)
+            } else {
+                // Overnight window (e.g. 22:00-06:00) wraps past midnight.
+                !nowTime.isBefore(start) || !nowTime.isAfter(end)
+            }
+        } catch (_: Exception) {
+            true
         }
     }
 
@@ -361,6 +434,7 @@ class PolicyVpnService : VpnService() {
         const val ACTION_UPDATE_RULES = "com.sysfactor.apps.smartprot.action.UPDATE_RULES"
         const val EXTRA_RULES_JSON = "rules_json"
         const val EXTRA_APP_DOMAINS_JSON = "app_domains_json"
+        const val EXTRA_DEFAULT_NETWORK = "default_network"
         private const val CHANNEL_ID = "vpn_service"
         private const val NOTIFICATION_ID = 1
         private const val TAG = "PolicyVpnService"

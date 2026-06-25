@@ -19,6 +19,15 @@ class TunForwarder(
     private val connectivityManager: ConnectivityManager,
     private val blockedDomains: Set<String> = emptySet(),
     private val blockedIps: Set<Int> = emptySet(),
+    // Explicit exceptions to the default policy below -- always win over both
+    // the blocklist and the default, matching firewall "first matching rule
+    // wins" semantics (individual rules > default policy).
+    private val allowedDomains: Set<String> = emptySet(),
+    private val allowedIps: Set<Int> = emptySet(),
+    // "allowed" (current/legacy behaviour: open unless blocked) or "blocked"
+    // (deny unless explicitly allowed) -- applied only when neither an allow
+    // nor a block rule matches the traffic.
+    private val defaultNetwork: String = "allowed",
     private val onBlocked: ((type: String, target: String, ip: String, port: Int) -> Unit)? = null,
     // Called for every domain seen in traffic, blocked or not, so the parent panel can
     // show "domains this device is trying to reach" and let the parent block them or
@@ -34,6 +43,9 @@ class TunForwarder(
 
     @Volatile private var currentBlockedDomains: Set<String> = blockedDomains
     @Volatile private var currentBlockedIps: Set<Int> = blockedIps
+    @Volatile private var currentAllowedDomains: Set<String> = allowedDomains
+    @Volatile private var currentAllowedIps: Set<Int> = allowedIps
+    @Volatile private var currentDefaultNetwork: String = defaultNetwork
 
     private data class TcpKey(
         val srcIp: Int, val srcPort: Int, val dstIp: Int, val dstPort: Int
@@ -52,11 +64,24 @@ class TunForwarder(
     private var nextUdpId = 1
     private val inspectedConns = ConcurrentHashMap<TcpKey, Boolean>()
 
-    fun updateRules(domains: Set<String>, ips: Set<Int>) {
+    fun updateRules(
+        domains: Set<String>,
+        ips: Set<Int>,
+        allowedDomains: Set<String> = emptySet(),
+        allowedIps: Set<Int> = emptySet(),
+        defaultNetwork: String = "allowed"
+    ) {
         currentBlockedDomains = domains
         currentBlockedIps = ips
-        Log.i(TAG, "Blocklist updated: ${domains.size} domains, ${ips.size} IPs")
+        currentAllowedDomains = allowedDomains
+        currentAllowedIps = allowedIps
+        currentDefaultNetwork = defaultNetwork
+        Log.i(TAG, "Blocklist updated: ${domains.size} blocked domains, ${ips.size} blocked IPs, " +
+            "${allowedDomains.size} allowed domains, ${allowedIps.size} allowed IPs, default=$defaultNetwork")
     }
+
+    private fun domainMatches(domain: String, set: Set<String>): Boolean =
+        set.any { entry -> domain == entry || domain.endsWith(".$entry") }
 
     fun start(fd: ParcelFileDescriptor) {
         tunIn = ParcelFileDescriptor.AutoCloseInputStream(fd)
@@ -188,7 +213,20 @@ class TunForwarder(
             return
         }
 
-        if (dstIp in currentBlockedIps) {
+        // Firewall precedence: an explicit allow/block rule on the destination IP
+        // always wins. Otherwise, ports 80/443 defer to domain-level inspection
+        // once data arrives (SNI/Host), since the IP alone (e.g. a shared CDN
+        // edge) isn't enough to know the domain. Any other port has no domain
+        // to inspect, so the default policy applies immediately at the SYN.
+        val ipAllowed = dstIp in currentAllowedIps
+        val ipBlocked = dstIp in currentBlockedIps
+        val blockAtSyn = when {
+            ipAllowed -> false
+            ipBlocked -> true
+            dstPort == 80 || dstPort == 443 -> false
+            else -> currentDefaultNetwork == "blocked"
+        }
+        if (blockAtSyn) {
             sendRst(key.dstIp, key.srcIp, key.dstPort, key.srcPort,
                 clientSeq + 1, 0)
             Log.i(TAG, "Blocked TCP to IP ${intToIp(dstIp)}:$dstPort")
@@ -241,20 +279,25 @@ class TunForwarder(
             reportObservedDomain(domain, PROTO_TCP, key.srcIp, key.srcPort, dstIp, dstPort)
         }
 
-        if (domain == null || currentBlockedDomains.isEmpty()) return false
+        val ipAllowed = dstIp in currentAllowedIps
+        val domainAllowed = domain != null && domainMatches(domain, currentAllowedDomains)
+        if (ipAllowed || domainAllowed) return false
 
-        val matched = currentBlockedDomains.any { blocked ->
-            domain == blocked || domain.endsWith(".$blocked")
-        }
-        if (matched) {
-            Log.i(TAG, "Blocked connection to $domain (${intToIp(dstIp)}:$dstPort)")
+        val ipBlocked = dstIp in currentBlockedIps
+        val domainBlocked = domain != null && domainMatches(domain, currentBlockedDomains)
+        // If no domain could be extracted (e.g. unsupported TLS record) and no
+        // IP-level rule matched either, this is the only inspection point for
+        // the connection, so the default policy decides here.
+        val shouldBlock = ipBlocked || domainBlocked || currentDefaultNetwork == "blocked"
+        if (shouldBlock) {
+            Log.i(TAG, "Blocked connection to ${domain ?: intToIp(dstIp)} (${intToIp(dstIp)}:$dstPort)")
             val conn = tcpConns[key]
             val rstSeq = conn?.serverSeq?.plus(1L) ?: 0L
             sendRst(key.dstIp, key.srcIp, key.dstPort, key.srcPort,
                 rstSeq, 0)
-            onBlocked?.invoke("domain_blocked", domain, intToIp(dstIp), dstPort)
+            onBlocked?.invoke("domain_blocked", domain ?: intToIp(dstIp), intToIp(dstIp), dstPort)
         }
-        return matched
+        return shouldBlock
     }
 
     /**
@@ -354,9 +397,8 @@ class TunForwarder(
         // attribution is unreliable here — still worth reporting the domain itself.
         reportObservedDomain(domainLower, PROTO_UDP, srcIp, srcPort, dstIp, dstPort)
 
-        val matched = currentBlockedDomains.any { blocked ->
-            domainLower == blocked || domainLower.endsWith(".$blocked")
-        }
+        if (domainMatches(domainLower, currentAllowedDomains)) return false
+        val matched = domainMatches(domainLower, currentBlockedDomains) || currentDefaultNetwork == "blocked"
         if (!matched) return false
         Log.i(TAG, "Blocked DNS query for $domain")
         val resp = buildDnsNxdomain(query)
@@ -444,11 +486,22 @@ class TunForwarder(
 
         if (dstPort == 53) {
             if (handleDnsQuery(payload, srcIp, dstIp, srcPort, dstPort)) return
-        }
-
-        if (dstPort == 443 && currentBlockedDomains.isNotEmpty()) {
-            Log.i(TAG, "Blocked UDP:443 to ${intToIp(dstIp)} (forcing TCP fallback)")
-            return
+        } else {
+            val ipAllowed = dstIp in currentAllowedIps
+            if (!ipAllowed) {
+                if (dstPort == 443 && (currentBlockedDomains.isNotEmpty() || currentDefaultNetwork == "blocked")) {
+                    // QUIC carries its own encrypted SNI we can't inspect at this layer.
+                    // Dropping it forces the client to fall back to TCP, where the
+                    // ClientHello SNI can be inspected in inspectAndBlock().
+                    Log.i(TAG, "Blocked UDP:443 to ${intToIp(dstIp)} (forcing TCP fallback)")
+                    return
+                }
+                val ipBlocked = dstIp in currentBlockedIps
+                if (ipBlocked || currentDefaultNetwork == "blocked") {
+                    onBlocked?.invoke("ip_blocked", intToIp(dstIp), intToIp(dstIp), dstPort)
+                    return
+                }
+            }
         }
 
         val udpId = dstPort % 10000 + (Math.abs(dstIp) % 255) * 10000

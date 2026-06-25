@@ -47,6 +47,7 @@ class PolicySyncWorker(
                             policy.appDomains?.let { appDomains ->
                                 putExtra(PolicyVpnService.EXTRA_APP_DOMAINS_JSON, Gson().toJson(appDomains))
                             }
+                            putExtra(PolicyVpnService.EXTRA_DEFAULT_NETWORK, policy.settings?.defaultNetwork ?: "allowed")
                         }
                         applicationContext.startService(intent)
                     }

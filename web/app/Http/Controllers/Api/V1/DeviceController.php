@@ -74,6 +74,7 @@ class DeviceController extends Controller
         $settings = [
             'protection_enabled' => true,
             'app_icon_visible' => true,
+            'default_network' => 'allowed',
             ...($policy->settings ?? []),
         ];
 

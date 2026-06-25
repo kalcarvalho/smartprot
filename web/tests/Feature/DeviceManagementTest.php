@@ -118,6 +118,56 @@ class DeviceManagementTest extends TestCase
         $this->assertCount(1, $policy->rules);
     }
 
+    public function test_user_can_edit_an_existing_rule(): void
+    {
+        $user = User::factory()->create();
+        $device = $this->deviceFor($user);
+        $device->policies()->create([
+            'version' => 1,
+            'settings' => ['protection_enabled' => true],
+            'rules' => [[
+                'id' => 'rule-1',
+                'type' => 'domain',
+                'target' => 'tiktok.com',
+                'network' => 'blocked',
+                'enabled' => true,
+                'schedule' => null,
+                'daily_limit_minutes' => null,
+                'notes' => null,
+                'created_at' => now()->toISOString(),
+            ]],
+        ]);
+
+        $this->actingAs($user)
+            ->put("/devices/{$device->id}/rules/rule-1", [
+                'type' => 'domain',
+                'target' => 'instagram.com',
+                'network' => 'allowed',
+                'enabled' => '1',
+            ])
+            ->assertRedirect();
+
+        $rule = $device->fresh()->latestPolicy()->rules[0];
+        $this->assertSame('rule-1', $rule['id']);
+        $this->assertSame('instagram.com', $rule['target']);
+        $this->assertSame('allowed', $rule['network']);
+    }
+
+    public function test_user_can_set_default_network_policy(): void
+    {
+        $user = User::factory()->create();
+        $device = $this->deviceFor($user);
+        $device->policies()->create(['version' => 1, 'rules' => [], 'settings' => ['protection_enabled' => true]]);
+
+        $this->actingAs($user)
+            ->patch("/devices/{$device->id}/default-network", ['default_network' => 'blocked'])
+            ->assertRedirect();
+
+        $policy = $device->fresh()->latestPolicy();
+        $this->assertSame(2, $policy->version);
+        $this->assertSame('blocked', $policy->settings['default_network']);
+    }
+
     public function test_user_cannot_view_another_users_device(): void
     {
         $owner = User::factory()->create();

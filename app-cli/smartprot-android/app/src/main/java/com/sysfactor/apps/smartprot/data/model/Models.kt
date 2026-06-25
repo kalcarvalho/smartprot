@@ -35,7 +35,8 @@ data class PolicyResponse(
 
 data class PolicySettings(
     @SerializedName("protection_enabled") val protectionEnabled: Boolean = true,
-    @SerializedName("app_icon_visible") val appIconVisible: Boolean = true
+    @SerializedName("app_icon_visible") val appIconVisible: Boolean = true,
+    @SerializedName("default_network") val defaultNetwork: String = "allowed"
 )
 
 data class Rule(
@@ -43,7 +44,14 @@ data class Rule(
     val target: String,
     val network: String,
     val from: String? = null,
-    val until: String? = null
+    val until: String? = null,
+    val schedule: Schedule? = null
+)
+
+data class Schedule(
+    val days: List<String>? = null,
+    @SerializedName("starts_at") val startsAt: String? = null,
+    @SerializedName("ends_at") val endsAt: String? = null
 )
 
 data class EventRequest(

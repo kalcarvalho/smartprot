@@ -109,51 +109,95 @@
                 </form>
             </section>
 
-            <section class="grid two-col">
-                <div class="panel">
-                    <h2>Bloqueios e liberacoes</h2>
-                    <div class="rule-list">
-                        @forelse ($rules as $rule)
-                            @php($ruleEnabled = (bool) ($rule['enabled'] ?? true))
-                            @php($schedule = $rule['schedule'] ?? null)
-                            <div class="rule-item">
-                                <div>
-                                    <strong>{{ ucfirst($rule['network'] ?? 'blocked') }} · {{ $rule['target'] ?? '-' }}</strong>
-                                    <span class="muted">Tipo: {{ $rule['type'] ?? '-' }} · {{ $ruleEnabled ? 'Ativa' : 'Desativada' }}</span>
-                                    @if ($schedule)
-                                        <span class="muted">Agenda: {{ implode(', ', $schedule['days'] ?? []) ?: 'todos os dias' }} {{ $schedule['starts_at'] ?? '--:--' }}-{{ $schedule['ends_at'] ?? '--:--' }}</span>
-                                    @endif
-                                    @if (! empty($rule['daily_limit_minutes']))
-                                        <span class="muted">Limite diario: {{ $rule['daily_limit_minutes'] }} min</span>
-                                    @endif
-                                    @if(!empty($rule['notes'])) <span class="muted">{{ $rule['notes'] }}</span> @endif
-                                </div>
-                                <div class="actions rule-actions">
-                                    <form method="post" action="{{ route('devices.rules.update', [$device, $rule['id']]) }}">
-                                        @csrf
-                                        @method('patch')
-                                        <input type="hidden" name="enabled" value="{{ $ruleEnabled ? 0 : 1 }}">
-                                        <button class="secondary compact" type="submit">{{ $ruleEnabled ? 'Desativar' : 'Ativar' }}</button>
-                                    </form>
-                                    <form method="post" action="{{ route('devices.rules.destroy', [$device, $rule['id']]) }}">
-                                        @csrf
-                                        @method('delete')
-                                        <button class="danger compact" type="submit">Remover</button>
-                                    </form>
-                                </div>
-                            </div>
-                        @empty
-                            <p class="muted">Nenhuma regra criada. O app cliente ainda nao bloqueia trafego especifico para este aparelho.</p>
-                        @endforelse
-                    </div>
+            @php($defaultNetwork = $settings['default_network'] ?? 'allowed')
+            <section class="panel">
+                <h2>Politica padrao (firewall)</h2>
+                <p class="muted">Define o que acontece quando nenhuma regra abaixo se aplica. Regras individuais sempre tem prioridade sobre a politica padrao.</p>
+                <div style="display:flex;gap:8px;margin-top:8px;">
+                    <form method="post" action="{{ route('devices.default-network.update', $device) }}">
+                        @csrf
+                        @method('patch')
+                        <input type="hidden" name="default_network" value="allowed">
+                        <button class="{{ $defaultNetwork === 'allowed' ? '' : 'secondary' }}" type="submit" {{ $defaultNetwork === 'allowed' ? 'disabled' : '' }}>
+                            Liberar tudo{{ $defaultNetwork === 'allowed' ? ' (ativo)' : '' }}
+                        </button>
+                    </form>
+                    <form method="post" action="{{ route('devices.default-network.update', $device) }}">
+                        @csrf
+                        @method('patch')
+                        <input type="hidden" name="default_network" value="blocked">
+                        <button class="{{ $defaultNetwork === 'blocked' ? 'danger' : 'secondary' }}" type="submit" {{ $defaultNetwork === 'blocked' ? 'disabled' : '' }}>
+                            Bloquear tudo{{ $defaultNetwork === 'blocked' ? ' (ativo)' : '' }}
+                        </button>
+                    </form>
                 </div>
+            </section>
 
-                <form class="panel" method="post" action="{{ route('devices.rules.store', $device) }}">
+            <section class="panel">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <h2>Bloqueios e liberacoes</h2>
+                    <button type="button" onclick="document.getElementById('rule-modal').showModal(); window.resetRuleModal();">+ Nova regra</button>
+                </div>
+                <p class="muted" style="margin-top:-4px;">
+                    Avaliadas de cima para baixo como num firewall: a primeira regra que combinar com o trafego decide; se nenhuma combinar, vale a politica padrao acima ({{ $defaultNetwork === 'blocked' ? 'bloquear tudo' : 'liberar tudo' }}).
+                </p>
+                <div class="rule-list">
+                    @forelse ($rules as $rule)
+                        @php($ruleEnabled = (bool) ($rule['enabled'] ?? true))
+                        @php($schedule = $rule['schedule'] ?? null)
+                        <div class="rule-item">
+                            <div>
+                                <strong>{{ ucfirst($rule['network'] ?? 'blocked') }} · {{ $rule['target'] ?? '-' }}</strong>
+                                <span class="muted">Tipo: {{ $rule['type'] ?? '-' }} · {{ $ruleEnabled ? 'Ativa' : 'Desativada' }}</span>
+                                @if ($schedule)
+                                    <span class="muted">Agenda: {{ implode(', ', $schedule['days'] ?? []) ?: 'todos os dias' }} {{ $schedule['starts_at'] ?? '--:--' }}-{{ $schedule['ends_at'] ?? '--:--' }}</span>
+                                @endif
+                                @if (! empty($rule['daily_limit_minutes']))
+                                    <span class="muted">Limite diario: {{ $rule['daily_limit_minutes'] }} min</span>
+                                @endif
+                                @if(!empty($rule['notes'])) <span class="muted">{{ $rule['notes'] }}</span> @endif
+                            </div>
+                            <div class="actions rule-actions">
+                                <button type="button" class="secondary compact"
+                                    onclick='window.openRuleModalForEdit(@json([
+                                        "id" => $rule["id"],
+                                        "type" => $rule["type"] ?? "app",
+                                        "target" => $rule["target"] ?? "",
+                                        "network" => $rule["network"] ?? "blocked",
+                                        "enabled" => $ruleEnabled,
+                                        "schedule_days" => $schedule["days"] ?? [],
+                                        "starts_at" => $schedule["starts_at"] ?? "",
+                                        "ends_at" => $schedule["ends_at"] ?? "",
+                                        "daily_limit_minutes" => $rule["daily_limit_minutes"] ?? "",
+                                        "notes" => $rule["notes"] ?? "",
+                                    ])); document.getElementById("rule-modal").showModal();'>Editar</button>
+                                <form method="post" action="{{ route('devices.rules.update', [$device, $rule['id']]) }}">
+                                    @csrf
+                                    @method('patch')
+                                    <input type="hidden" name="enabled" value="{{ $ruleEnabled ? 0 : 1 }}">
+                                    <button class="secondary compact" type="submit">{{ $ruleEnabled ? 'Desativar' : 'Ativar' }}</button>
+                                </form>
+                                <form method="post" action="{{ route('devices.rules.destroy', [$device, $rule['id']]) }}">
+                                    @csrf
+                                    @method('delete')
+                                    <button class="danger compact" type="submit">Remover</button>
+                                </form>
+                            </div>
+                        </div>
+                    @empty
+                        <p class="muted">Nenhuma regra criada ainda. Use "+ Nova regra" para adicionar uma exececao a politica padrao.</p>
+                    @endforelse
+                </div>
+            </section>
+
+            <dialog id="rule-modal" style="border:none;border-radius:var(--border-radius-lg, 12px);padding:0;max-width:520px;width:100%;">
+                <form id="rule-form" class="panel" method="post" action="{{ route('devices.rules.store', $device) }}" style="margin:0;">
                     @csrf
-                    <h2>Nova regra</h2>
+                    <input type="hidden" id="rule-method-field" name="_method" value="POST">
+                    <h2 id="rule-modal-title">Nova regra</h2>
 
                     <input type="hidden" name="enabled" value="0">
-                    <label class="checkbox-line"><input name="enabled" type="checkbox" value="1" checked> Regra ativa</label>
+                    <label class="checkbox-line"><input id="rule-enabled" name="enabled" type="checkbox" value="1" checked> Regra ativa</label>
 
                     <label for="type">Tipo</label>
                     <select id="type" name="type" required>
@@ -175,11 +219,11 @@
                     </select>
                     @error('network')<div class="error">{{ $message }}</div>@enderror
 
-                    <input type="hidden" name="schedule_enabled" value="0">
-                    <label class="checkbox-line"><input name="schedule_enabled" type="checkbox" value="1"> Usar agenda</label>
+                    <input type="hidden" name="schedule_enabled" id="schedule_enabled" value="0">
+                    <label class="checkbox-line"><input id="schedule_enabled_checkbox" type="checkbox" value="1" onchange="document.getElementById('schedule_enabled').value = this.checked ? 1 : 0;"> Usar agenda</label>
                     <div class="weekday-grid">
                         @foreach ([ 'mon' => 'Seg', 'tue' => 'Ter', 'wed' => 'Qua', 'thu' => 'Qui', 'fri' => 'Sex', 'sat' => 'Sab', 'sun' => 'Dom' ] as $value => $label)
-                            <label><input type="checkbox" name="schedule_days[]" value="{{ $value }}"> {{ $label }}</label>
+                            <label><input type="checkbox" class="schedule-day" name="schedule_days[]" value="{{ $value }}"> {{ $label }}</label>
                         @endforeach
                     </div>
                     <div class="form-grid grid">
@@ -203,11 +247,52 @@
                     <textarea id="notes" name="notes" placeholder="Opcional">{{ old('notes') }}</textarea>
                     @error('notes')<div class="error">{{ $message }}</div>@enderror
 
-                    <div class="actions" style="margin-top: 20px;">
-                        <button type="submit">Adicionar regra</button>
+                    <div class="actions" style="margin-top: 20px;display:flex;justify-content:flex-end;gap:8px;">
+                        <button type="button" class="secondary" onclick="document.getElementById('rule-modal').close();">Cancelar</button>
+                        <button id="rule-submit-button" type="submit">Adicionar regra</button>
                     </div>
                 </form>
-            </section>
+            </dialog>
+
+            <script>
+                (function () {
+                    var form = document.getElementById('rule-form');
+                    var storeUrl = '{{ route('devices.rules.store', $device) }}';
+                    var editUrlTemplate = '{{ route('devices.rules.edit', [$device, '__ID__']) }}';
+
+                    window.resetRuleModal = function () {
+                        form.action = storeUrl;
+                        document.getElementById('rule-method-field').value = 'POST';
+                        document.getElementById('rule-modal-title').textContent = 'Nova regra';
+                        document.getElementById('rule-submit-button').textContent = 'Adicionar regra';
+                        form.reset();
+                        document.getElementById('schedule_enabled').value = '0';
+                    };
+
+                    window.openRuleModalForEdit = function (rule) {
+                        form.action = editUrlTemplate.replace('__ID__', rule.id);
+                        document.getElementById('rule-method-field').value = 'PUT';
+                        document.getElementById('rule-modal-title').textContent = 'Editar regra';
+                        document.getElementById('rule-submit-button').textContent = 'Salvar alteracoes';
+
+                        document.getElementById('rule-enabled').checked = !!rule.enabled;
+                        document.getElementById('type').value = rule.type;
+                        document.getElementById('target').value = rule.target;
+                        document.getElementById('network').value = rule.network;
+                        document.getElementById('daily_limit_minutes').value = rule.daily_limit_minutes || '';
+                        document.getElementById('notes').value = rule.notes || '';
+
+                        var hasSchedule = rule.starts_at || rule.ends_at || (rule.schedule_days && rule.schedule_days.length);
+                        document.getElementById('schedule_enabled_checkbox').checked = hasSchedule;
+                        document.getElementById('schedule_enabled').value = hasSchedule ? '1' : '0';
+                        document.getElementById('starts_at').value = rule.starts_at || '';
+                        document.getElementById('ends_at').value = rule.ends_at || '';
+                        document.querySelectorAll('.schedule-day').forEach(function (cb) {
+                            cb.checked = (rule.schedule_days || []).indexOf(cb.value) !== -1;
+                        });
+                    };
+                })();
+            </script>
         </main>
     </div>
 </x-layouts.app>

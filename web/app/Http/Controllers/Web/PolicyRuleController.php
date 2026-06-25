@@ -11,13 +11,15 @@ use Illuminate\Support\Str;
 
 class PolicyRuleController extends Controller
 {
-    private const DEFAULT_SETTINGS = ['protection_enabled' => true, 'app_icon_visible' => true];
+    private const DEFAULT_SETTINGS = [
+        'protection_enabled' => true,
+        'app_icon_visible' => true,
+        'default_network' => 'allowed',
+    ];
 
-    public function store(Request $request, Device $device): RedirectResponse
+    private function validateRuleInput(Request $request): array
     {
-        abort_unless($device->user_id === null || $device->user_id === $request->user()->id, 404);
-
-        $data = $request->validate([
+        return $request->validate([
             'type' => ['required', 'in:app,domain,ip,url'],
             'target' => ['required', 'string', 'max:255'],
             'network' => ['required', 'in:blocked,allowed'],
@@ -30,6 +32,13 @@ class PolicyRuleController extends Controller
             'ends_at' => ['nullable', 'date_format:H:i', 'required_with:starts_at'],
             'daily_limit_minutes' => ['nullable', 'integer', 'min:1', 'max:1440'],
         ]);
+    }
+
+    public function store(Request $request, Device $device): RedirectResponse
+    {
+        abort_unless($device->user_id === null || $device->user_id === $request->user()->id, 404);
+
+        $data = $this->validateRuleInput($request);
 
         $policy = $device->latestPolicy();
         $rules = collect($policy?->rules ?? [])->push([
@@ -47,6 +56,44 @@ class PolicyRuleController extends Controller
         $this->createPolicyVersion($device, $policy, $rules, $this->settingsFrom($policy));
 
         return back()->with('status', 'Regra adicionada e politica versionada.');
+    }
+
+    public function editRule(Request $request, Device $device, string $ruleId): RedirectResponse
+    {
+        abort_unless($device->user_id === null || $device->user_id === $request->user()->id, 404);
+
+        $data = $this->validateRuleInput($request);
+
+        $policy = $device->latestPolicy();
+        $found = false;
+        $rules = collect($policy?->rules ?? [])
+            ->map(function (array $rule) use ($ruleId, $data, $request, &$found): array {
+                if (($rule['id'] ?? null) !== $ruleId) {
+                    return $rule;
+                }
+
+                $found = true;
+
+                return [
+                    'id' => $rule['id'],
+                    'type' => $data['type'],
+                    'target' => trim($data['target']),
+                    'network' => $data['network'],
+                    'enabled' => $request->boolean('enabled', true),
+                    'schedule' => $this->scheduleFrom($data, $request),
+                    'daily_limit_minutes' => $data['daily_limit_minutes'] ?? null,
+                    'notes' => $data['notes'] ?? null,
+                    'created_at' => $rule['created_at'] ?? now()->toISOString(),
+                ];
+            })
+            ->values()
+            ->all();
+
+        abort_unless($found, 404);
+
+        $this->createPolicyVersion($device, $policy, $rules, $this->settingsFrom($policy));
+
+        return back()->with('status', 'Regra atualizada e politica versionada.');
     }
 
     public function update(Request $request, Device $device, string $ruleId): RedirectResponse
@@ -125,6 +172,27 @@ class PolicyRuleController extends Controller
         $this->createPolicyVersion($device, $policy, $policy?->rules ?? [], $settings);
 
         return back()->with('status', $settings['app_icon_visible'] ? 'Icone do app reativado.' : 'Icone do app ocultado.');
+    }
+
+    public function toggleDefaultNetwork(Request $request, Device $device): RedirectResponse
+    {
+        abort_unless($device->user_id === null || $device->user_id === $request->user()->id, 404);
+
+        $data = $request->validate([
+            'default_network' => ['required', 'in:blocked,allowed'],
+        ]);
+
+        $policy = $device->latestPolicy();
+        $settings = [
+            ...$this->settingsFrom($policy),
+            'default_network' => $data['default_network'],
+        ];
+
+        $this->createPolicyVersion($device, $policy, $policy?->rules ?? [], $settings);
+
+        return back()->with('status', $settings['default_network'] === 'blocked'
+            ? 'Politica padrao: bloquear tudo (regras de liberacao abaixo sao exececoes).'
+            : 'Politica padrao: liberar tudo (regras de bloqueio abaixo sao exececoes).');
     }
 
     private function scheduleFrom(array $data, Request $request): ?array
