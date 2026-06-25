@@ -96,6 +96,55 @@ class PolicyRuleController extends Controller
         return back()->with('status', 'Regra atualizada e politica versionada.');
     }
 
+    public function duplicateRule(Request $request, Device $device, string $ruleId): RedirectResponse
+    {
+        abort_unless($device->user_id === null || $device->user_id === $request->user()->id, 404);
+
+        $policy = $device->latestPolicy();
+        $original = collect($policy?->rules ?? [])->firstWhere('id', $ruleId);
+        abort_unless($original !== null, 404);
+
+        $copy = $original;
+        $copy['id'] = (string) Str::uuid();
+        $copy['created_at'] = now()->toISOString();
+        $copy['notes'] = trim(($original['notes'] ?? '').' (copia)');
+
+        $rules = collect($policy->rules)->push($copy)->values()->all();
+
+        $this->createPolicyVersion($device, $policy, $rules, $this->settingsFrom($policy));
+
+        return back()->with('status', 'Regra duplicada. Edite a copia para ajustar.');
+    }
+
+    public function copyRuleToDevice(Request $request, Device $device, string $ruleId): RedirectResponse
+    {
+        abort_unless($device->user_id === null || $device->user_id === $request->user()->id, 404);
+
+        $data = $request->validate([
+            'target_device_id' => ['required', 'integer', 'exists:devices,id'],
+        ]);
+
+        abort_if((int) $data['target_device_id'] === $device->id, 422, 'Selecione um aparelho diferente.');
+
+        $targetDevice = Device::findOrFail($data['target_device_id']);
+        abort_unless($targetDevice->user_id === null || $targetDevice->user_id === $request->user()->id, 404);
+
+        $policy = $device->latestPolicy();
+        $original = collect($policy?->rules ?? [])->firstWhere('id', $ruleId);
+        abort_unless($original !== null, 404);
+
+        $copy = $original;
+        $copy['id'] = (string) Str::uuid();
+        $copy['created_at'] = now()->toISOString();
+
+        $targetPolicy = $targetDevice->latestPolicy();
+        $targetRules = collect($targetPolicy?->rules ?? [])->push($copy)->values()->all();
+
+        $this->createPolicyVersion($targetDevice, $targetPolicy, $targetRules, $this->settingsFrom($targetPolicy));
+
+        return back()->with('status', "Regra copiada para {$targetDevice->name}.");
+    }
+
     public function update(Request $request, Device $device, string $ruleId): RedirectResponse
     {
         abort_unless($device->user_id === null || $device->user_id === $request->user()->id, 404);

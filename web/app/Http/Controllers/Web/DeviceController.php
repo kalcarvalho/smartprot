@@ -106,6 +106,15 @@ class DeviceController extends Controller
             ->first()
             ?->occurred_at;
 
+        $otherDevices = Device::query()
+            ->where('id', '!=', $device->id)
+            ->where(function ($query) use ($request) {
+                $query->where('user_id', $request->user()->id)
+                    ->orWhereNull('user_id');
+            })
+            ->orderBy('name')
+            ->get(['id', 'name', 'public_id']);
+
         return view('devices.show', [
             'device' => $device,
             'policy' => $policy,
@@ -113,6 +122,7 @@ class DeviceController extends Controller
             'rules' => collect($policy?->rules ?? []),
             'lastPolicySync' => $lastPolicySync,
             'policySyncIntervalMinutes' => 1,
+            'otherDevices' => $otherDevices,
         ]);
     }
 }

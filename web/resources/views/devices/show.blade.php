@@ -178,6 +178,22 @@
                                     <input type="hidden" name="enabled" value="{{ $ruleEnabled ? 0 : 1 }}">
                                     <button class="secondary compact" type="submit">{{ $ruleEnabled ? 'Desativar' : 'Ativar' }}</button>
                                 </form>
+                                <form method="post" action="{{ route('devices.rules.duplicate', [$device, $rule['id']]) }}">
+                                    @csrf
+                                    <button class="secondary compact" type="submit">Duplicar</button>
+                                </form>
+                                @if ($otherDevices->isNotEmpty())
+                                    <form method="post" action="{{ route('devices.rules.copy-to', [$device, $rule['id']]) }}" style="display:flex;gap:4px;align-items:center;">
+                                        @csrf
+                                        <select name="target_device_id" required style="height:32px;font-size:13px;">
+                                            <option value="" disabled selected>Copiar para...</option>
+                                            @foreach ($otherDevices as $other)
+                                                <option value="{{ $other->id }}">{{ $other->name }}</option>
+                                            @endforeach
+                                        </select>
+                                        <button class="secondary compact" type="submit">Copiar</button>
+                                    </form>
+                                @endif
                                 <form method="post" action="{{ route('devices.rules.destroy', [$device, $rule['id']]) }}">
                                     @csrf
                                     @method('delete')

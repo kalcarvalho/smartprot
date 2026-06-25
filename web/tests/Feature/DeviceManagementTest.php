@@ -178,6 +178,64 @@ class DeviceManagementTest extends TestCase
         $this->assertSame('allowed', $rule['network']);
     }
 
+    public function test_user_can_duplicate_a_rule(): void
+    {
+        $user = User::factory()->create();
+        $device = $this->deviceFor($user);
+        $device->policies()->create([
+            'version' => 1,
+            'settings' => ['protection_enabled' => true],
+            'rules' => [[
+                'id' => 'rule-1',
+                'type' => 'domain',
+                'target' => 'tiktok.com',
+                'network' => 'blocked',
+                'enabled' => true,
+                'notes' => null,
+            ]],
+        ]);
+
+        $this->actingAs($user)
+            ->post("/devices/{$device->id}/rules/rule-1/duplicate")
+            ->assertRedirect();
+
+        $rules = $device->fresh()->latestPolicy()->rules;
+        $this->assertCount(2, $rules);
+        $this->assertSame('tiktok.com', $rules[1]['target']);
+        $this->assertNotSame('rule-1', $rules[1]['id']);
+    }
+
+    public function test_user_can_copy_a_rule_to_another_device(): void
+    {
+        $user = User::factory()->create();
+        $sourceDevice = $this->deviceFor($user, 'dev_source', 'Source phone');
+        $targetDevice = $this->deviceFor($user, 'dev_target', 'Target phone');
+
+        $sourceDevice->policies()->create([
+            'version' => 1,
+            'settings' => ['protection_enabled' => true],
+            'rules' => [[
+                'id' => 'rule-1',
+                'type' => 'domain',
+                'target' => 'tiktok.com',
+                'network' => 'blocked',
+                'enabled' => true,
+            ]],
+        ]);
+        $targetDevice->policies()->create(['version' => 1, 'rules' => [], 'settings' => ['protection_enabled' => true]]);
+
+        $this->actingAs($user)
+            ->post("/devices/{$sourceDevice->id}/rules/rule-1/copy-to", ['target_device_id' => $targetDevice->id])
+            ->assertRedirect();
+
+        $targetRules = $targetDevice->fresh()->latestPolicy()->rules;
+        $this->assertCount(1, $targetRules);
+        $this->assertSame('tiktok.com', $targetRules[0]['target']);
+
+        $sourceRules = $sourceDevice->fresh()->latestPolicy()->rules;
+        $this->assertCount(1, $sourceRules);
+    }
+
     public function test_user_can_set_default_network_policy(): void
     {
         $user = User::factory()->create();

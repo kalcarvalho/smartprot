@@ -31,6 +31,8 @@ Route::middleware('auth')->group(function (): void {
     Route::put('/devices/{device}/rules/{ruleId}', [PolicyRuleController::class, 'editRule'])->name('devices.rules.edit');
     Route::patch('/devices/{device}/rules/{ruleId}', [PolicyRuleController::class, 'update'])->name('devices.rules.update');
     Route::delete('/devices/{device}/rules/{ruleId}', [PolicyRuleController::class, 'destroy'])->name('devices.rules.destroy');
+    Route::post('/devices/{device}/rules/{ruleId}/duplicate', [PolicyRuleController::class, 'duplicateRule'])->name('devices.rules.duplicate');
+    Route::post('/devices/{device}/rules/{ruleId}/copy-to', [PolicyRuleController::class, 'copyRuleToDevice'])->name('devices.rules.copy-to');
 
     Route::get('/devices/{device}/domains', [DeviceDomainController::class, 'index'])->name('devices.domains.index');
     Route::patch('/devices/{device}/domains/{domain}', [DeviceDomainController::class, 'associate'])->name('devices.domains.associate');
