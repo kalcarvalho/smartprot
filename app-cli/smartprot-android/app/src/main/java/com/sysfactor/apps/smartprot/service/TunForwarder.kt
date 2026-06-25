@@ -64,6 +64,15 @@ class TunForwarder(
     private var nextUdpId = 1
     private val inspectedConns = ConcurrentHashMap<TcpKey, Boolean>()
 
+    // Domain behind each currently-open (not yet closed) TCP connection, so
+    // usage tracking can see long-lived streaming connections (e.g. a video
+    // still playing) that don't re-handshake every minute and therefore never
+    // reappear in the one-shot "domain observed" callback after the first tick.
+    private val connDomains = ConcurrentHashMap<TcpKey, String>()
+
+    /** Snapshot of domains with at least one currently open connection. */
+    fun activeDomainsSnapshot(): Set<String> = connDomains.values.toSet()
+
     fun updateRules(
         domains: Set<String>,
         ips: Set<Int>,
@@ -117,6 +126,7 @@ class TunForwarder(
         }
         tcpConns.clear()
         inspectedConns.clear()
+        connDomains.clear()
         for ((_, sock) in udpSocks) {
             try { sock.close() } catch (_: Exception) {}
         }
@@ -277,6 +287,7 @@ class TunForwarder(
 
         if (domain != null) {
             reportObservedDomain(domain, PROTO_TCP, key.srcIp, key.srcPort, dstIp, dstPort)
+            connDomains[key] = domain
         }
 
         val ipAllowed = dstIp in currentAllowedIps
@@ -380,6 +391,7 @@ class TunForwarder(
     private fun closeTcpConn(key: TcpKey) {
         val conn = tcpConns.remove(key) ?: return
         inspectedConns.remove(key)
+        connDomains.remove(key)
         try { conn.socket.close() } catch (_: Exception) {}
         try { conn.outThread.interrupt() } catch (_: Exception) {}
     }

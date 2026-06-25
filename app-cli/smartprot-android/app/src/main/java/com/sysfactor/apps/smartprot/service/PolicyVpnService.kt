@@ -51,6 +51,7 @@ class PolicyVpnService : VpnService() {
     // periodic flush reports them to the server via DeviceRepository.reportDomains().
     private val observedDomains = ConcurrentHashMap<String, String?>()
     private var domainReportLoopStarted = false
+    private val usageTracker by lazy { UsageTracker(this) }
     private var policySyncLoopStarted = false
 
     override fun onCreate() {
@@ -164,6 +165,8 @@ class PolicyVpnService : VpnService() {
     }
 
     private suspend fun flushObservedDomains() {
+        tickUsage()
+
         if (observedDomains.isEmpty()) return
         val snapshot = HashMap(observedDomains)
         observedDomains.keys.removeAll(snapshot.keys)
@@ -174,6 +177,49 @@ class PolicyVpnService : VpnService() {
             .forEach { (appPackage, domains) ->
                 repo.reportDomains(domains, appPackage)
             }
+    }
+
+    /**
+     * Approximates one minute of usage for every rule with a daily limit whose
+     * app/domain had traffic in this window. Uses both the TUN forwarder's
+     * currently-open connections (catches a long-lived stream that hasn't
+     * re-handshaked) and the just-observed-domains buffer (catches short
+     * requests that already closed by the time this tick runs).
+     */
+    private fun tickUsage() {
+        val activeDomains = (forwarder?.activeDomainsSnapshot() ?: emptySet()) + observedDomains.keys
+        if (activeDomains.isEmpty()) return
+
+        for (rule in currentRules) {
+            val limit = rule.dailyLimitMinutes ?: continue
+            val ruleId = rule.id ?: continue
+            val matches = when (rule.type) {
+                "domain", "url" -> activeDomains.any { domainMatches(it, setOf(rule.target.lowercase())) }
+                "app" -> {
+                    val expanded = (KNOWN_APP_DOMAINS[rule.target] ?: emptySet()) + (serverAppDomains[rule.target] ?: emptySet())
+                    activeDomains.any { domainMatches(it, expanded) }
+                }
+                else -> false
+            }
+            if (matches) {
+                usageTracker.recordTick(ruleId)
+            }
+        }
+
+        // Re-apply immediately so a rule that just crossed its daily limit
+        // starts blocking this tick, instead of waiting for the next server
+        // policy sync to notice the new usage total.
+        applyRules(currentRules, null, resolvedDefaultNetwork)
+    }
+
+    private fun domainMatches(domain: String, set: Set<String>): Boolean =
+        set.any { entry -> domain == entry || domain.endsWith(".$entry") }
+
+    /** A rule's network flips to "blocked" once its daily usage limit is reached, regardless of its configured action. */
+    private fun effectiveNetwork(rule: Rule): String {
+        val limit = rule.dailyLimitMinutes ?: return rule.network
+        val ruleId = rule.id ?: return rule.network
+        return if (usageTracker.minutesUsedToday(ruleId) >= limit) "blocked" else rule.network
     }
 
     /** Called from the TUN forwarder for every domain seen in traffic, blocked or not. */
@@ -207,29 +253,29 @@ class PolicyVpnService : VpnService() {
             }
 
             val blockedApps = currentRules
-                .filter { it.type == "app" && it.network == "blocked" }
+                .filter { it.type == "app" && effectiveNetwork(it) == "blocked" }
                 .map { it.target }
                 .toSet()
             val allowedApps = currentRules
-                .filter { it.type == "app" && it.network == "allowed" }
+                .filter { it.type == "app" && effectiveNetwork(it) == "allowed" }
                 .map { it.target }
                 .toSet()
 
             val blockedDomains = currentRules
-                .filter { (it.type == "domain" || it.type == "url") && it.network == "blocked" }
+                .filter { (it.type == "domain" || it.type == "url") && effectiveNetwork(it) == "blocked" }
                 .map { it.target.lowercase() }
                 .toMutableSet()
             val allowedDomains = currentRules
-                .filter { (it.type == "domain" || it.type == "url") && it.network == "allowed" }
+                .filter { (it.type == "domain" || it.type == "url") && effectiveNetwork(it) == "allowed" }
                 .map { it.target.lowercase() }
                 .toMutableSet()
 
             val blockedIps = currentRules
-                .filter { it.type == "ip" && it.network == "blocked" }
+                .filter { it.type == "ip" && effectiveNetwork(it) == "blocked" }
                 .mapNotNull { ipToInt(it.target) }
                 .toMutableSet()
             val allowedIps = currentRules
-                .filter { it.type == "ip" && it.network == "allowed" }
+                .filter { it.type == "ip" && effectiveNetwork(it) == "allowed" }
                 .mapNotNull { ipToInt(it.target) }
                 .toMutableSet()
 

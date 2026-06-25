@@ -40,12 +40,14 @@ data class PolicySettings(
 )
 
 data class Rule(
+    val id: String? = null,
     val type: String,
     val target: String,
     val network: String,
     val from: String? = null,
     val until: String? = null,
-    val schedule: Schedule? = null
+    val schedule: Schedule? = null,
+    @SerializedName("daily_limit_minutes") val dailyLimitMinutes: Int? = null
 )
 
 data class Schedule(
