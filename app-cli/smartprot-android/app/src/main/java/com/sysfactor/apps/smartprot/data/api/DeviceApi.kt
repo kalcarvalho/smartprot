@@ -9,6 +9,8 @@ import com.sysfactor.apps.smartprot.data.model.HeartbeatResponse
 import com.sysfactor.apps.smartprot.data.model.PolicyResponse
 import com.sysfactor.apps.smartprot.data.model.RegisterRequest
 import com.sysfactor.apps.smartprot.data.model.RegisterResponse
+import com.sysfactor.apps.smartprot.data.model.UsageRequest
+import com.sysfactor.apps.smartprot.data.model.UsageResponse
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
@@ -39,4 +41,10 @@ interface DeviceApi {
         @Path("deviceId") deviceId: String,
         @Body request: DomainsRequest
     ): DomainsResponse
+
+    @POST("devices/{deviceId}/usage")
+    suspend fun storeUsage(
+        @Path("deviceId") deviceId: String,
+        @Body request: UsageRequest
+    ): UsageResponse
 }

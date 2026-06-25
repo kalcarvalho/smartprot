@@ -186,4 +186,37 @@ class DeviceApiTest extends TestCase
         ]);
         $this->assertSame(1, $device->domains()->where('domain', 't.me')->count());
     }
+
+    public function test_device_can_report_daily_usage_minutes(): void
+    {
+        $device = Device::create([
+            'public_id' => 'dev_usage',
+            'name' => 'Child phone',
+            'platform' => 'android',
+            'device_fingerprint' => 'fingerprint-usage',
+            'token_hash' => hash('sha256', 'secret-token'),
+        ]);
+        $device->policies()->create(['version' => 1, 'rules' => [], 'settings' => ['protection_enabled' => true]]);
+
+        $this->withToken('secret-token')
+            ->postJson('/api/v1/devices/dev_usage/usage', [
+                'usage' => ['rule-1' => 12, 'rule-2' => 45],
+            ])
+            ->assertAccepted()
+            ->assertJson(['accepted' => true, 'updated' => 2]);
+
+        $this->assertDatabaseHas('device_rule_usages', [
+            'device_id' => $device->id,
+            'rule_id' => 'rule-1',
+            'minutes_used' => 12,
+        ]);
+
+        // Reporting again the same day updates the existing row instead of duplicating it.
+        $this->withToken('secret-token')
+            ->postJson('/api/v1/devices/dev_usage/usage', ['usage' => ['rule-1' => 13]])
+            ->assertAccepted();
+
+        $this->assertDatabaseHas('device_rule_usages', ['device_id' => $device->id, 'rule_id' => 'rule-1', 'minutes_used' => 13]);
+        $this->assertSame(1, $device->ruleUsages()->where('rule_id', 'rule-1')->count());
+    }
 }

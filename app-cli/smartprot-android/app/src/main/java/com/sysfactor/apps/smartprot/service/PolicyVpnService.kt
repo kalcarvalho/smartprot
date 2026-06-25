@@ -46,6 +46,7 @@ class PolicyVpnService : VpnService() {
     private var resolvedAllowedDomains: Set<String> = emptySet()
     private var resolvedAllowedIps: Set<Int> = emptySet()
     private var resolvedDefaultNetwork: String = "allowed"
+    private var resolvedProtectionEnabled: Boolean = true
 
     // domain -> app package (nullable) observed in traffic, buffered until the next
     // periodic flush reports them to the server via DeviceRepository.reportDomains().
@@ -202,30 +203,41 @@ class PolicyVpnService : VpnService() {
      * re-handshaked) and the just-observed-domains buffer (catches short
      * requests that already closed by the time this tick runs).
      */
-    private fun tickUsage() {
-        val activeDomains = (forwarder?.activeDomainsSnapshot() ?: emptySet()) + observedDomains.keys
-        if (activeDomains.isEmpty()) return
+    private suspend fun tickUsage() {
+        if (!resolvedProtectionEnabled) return
 
-        for (rule in currentRules) {
-            val limit = rule.dailyLimitMinutes ?: continue
-            val ruleId = rule.id ?: continue
-            val matches = when (rule.type) {
-                "domain", "url" -> activeDomains.any { domainMatches(it, setOf(rule.target.lowercase())) }
-                "app" -> {
-                    val expanded = (KNOWN_APP_DOMAINS[rule.target] ?: emptySet()) + (serverAppDomains[rule.target] ?: emptySet())
-                    activeDomains.any { domainMatches(it, expanded) }
+        val rulesWithLimits = currentRules.filter { it.dailyLimitMinutes != null && it.id != null }
+        if (rulesWithLimits.isEmpty()) return
+
+        val activeDomains = (forwarder?.activeDomainsSnapshot() ?: emptySet()) + observedDomains.keys
+        var anyMatched = false
+        if (activeDomains.isNotEmpty()) {
+            for (rule in rulesWithLimits) {
+                val ruleId = rule.id ?: continue
+                val matches = when (rule.type) {
+                    "domain", "url" -> activeDomains.any { domainMatches(it, setOf(rule.target.lowercase())) }
+                    "app" -> {
+                        val expanded = (KNOWN_APP_DOMAINS[rule.target] ?: emptySet()) + (serverAppDomains[rule.target] ?: emptySet())
+                        activeDomains.any { domainMatches(it, expanded) }
+                    }
+                    else -> false
                 }
-                else -> false
-            }
-            if (matches) {
-                usageTracker.recordTick(ruleId)
+                if (matches) {
+                    usageTracker.recordTick(ruleId)
+                    anyMatched = true
+                }
             }
         }
 
-        // Re-apply immediately so a rule that just crossed its daily limit
-        // starts blocking this tick, instead of waiting for the next server
-        // policy sync to notice the new usage total.
-        applyRules(currentRules, null, resolvedDefaultNetwork)
+        if (anyMatched) {
+            // Re-apply immediately so a rule that just crossed its daily limit
+            // starts blocking this tick, instead of waiting for the next server
+            // policy sync to notice the new usage total.
+            applyRules(currentRules, null, resolvedDefaultNetwork, resolvedProtectionEnabled)
+        }
+
+        val usageSnapshot = rulesWithLimits.associate { it.id!! to usageTracker.minutesUsedToday(it.id!!) }
+        DeviceRepository(this).reportUsage(usageSnapshot)
     }
 
     private fun domainMatches(domain: String, set: Set<String>): Boolean =
@@ -265,6 +277,7 @@ class PolicyVpnService : VpnService() {
         protectionEnabled: Boolean = true
     ) {
         synchronized(vpnLock) {
+            resolvedProtectionEnabled = protectionEnabled
             if (!protectionEnabled) {
                 if (vpnInterface != null) {
                     Log.i(TAG, "Protection paused -- tearing down the TUN tunnel")

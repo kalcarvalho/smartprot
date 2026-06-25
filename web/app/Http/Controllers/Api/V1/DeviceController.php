@@ -142,6 +142,31 @@ class DeviceController extends Controller
         ], 202);
     }
 
+    public function storeUsage(Request $request, Device $device): JsonResponse
+    {
+        if (! $this->isAuthorized($request, $device)) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        $data = $request->validate([
+            'usage' => ['required', 'array', 'max:100'],
+            'usage.*' => ['required', 'integer', 'min:0', 'max:1440'],
+        ]);
+
+        $today = now()->toDateString();
+        $updated = 0;
+
+        foreach ($data['usage'] as $ruleId => $minutesUsed) {
+            \App\Models\DeviceRuleUsage::updateOrCreate(
+                ['device_id' => $device->id, 'rule_id' => (string) $ruleId, 'usage_date' => $today],
+                ['minutes_used' => $minutesUsed]
+            );
+            $updated++;
+        }
+
+        return response()->json(['accepted' => true, 'updated' => $updated], 202);
+    }
+
     public function storeEvent(Request $request, Device $device): JsonResponse
     {
         if (! $this->isAuthorized($request, $device)) {

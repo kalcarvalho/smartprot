@@ -64,6 +64,11 @@ class Device extends Model
         return $this->hasMany(DeviceDomain::class);
     }
 
+    public function ruleUsages(): HasMany
+    {
+        return $this->hasMany(DeviceRuleUsage::class);
+    }
+
     public function isOnline(): bool
     {
         return $this->last_seen_at !== null

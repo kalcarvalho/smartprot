@@ -75,3 +75,12 @@ data class DomainsResponse(
     val accepted: Boolean,
     val inserted: Int
 )
+
+data class UsageRequest(
+    val usage: Map<String, Int>
+)
+
+data class UsageResponse(
+    val accepted: Boolean,
+    val updated: Int
+)

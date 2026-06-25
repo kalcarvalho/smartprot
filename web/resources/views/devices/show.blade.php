@@ -165,7 +165,12 @@
                                     <span class="muted">Agenda: {{ implode(', ', $schedule['days'] ?? []) ?: 'todos os dias' }} {{ $schedule['starts_at'] ?? '--:--' }}-{{ $schedule['ends_at'] ?? '--:--' }}</span>
                                 @endif
                                 @if (! empty($rule['daily_limit_minutes']))
-                                    <span class="muted">Limite diario: {{ $rule['daily_limit_minutes'] }} min</span>
+                                    @php($usedMinutes = (int) ($usageByRuleId[$rule['id']] ?? 0))
+                                    @php($limitMinutes = (int) $rule['daily_limit_minutes'])
+                                    <span class="muted">
+                                        Uso hoje: {{ $usedMinutes }} / {{ $limitMinutes }} min
+                                        @if ($usedMinutes >= $limitMinutes) <strong>(limite atingido)</strong> @endif
+                                    </span>
                                 @endif
                                 @if(!empty($rule['notes'])) <span class="muted">{{ $rule['notes'] }}</span> @endif
                             </div>

@@ -10,6 +10,7 @@ import com.sysfactor.apps.smartprot.data.model.HeartbeatRequest
 import com.sysfactor.apps.smartprot.data.model.PolicyResponse
 import com.sysfactor.apps.smartprot.data.model.RegisterRequest
 import com.sysfactor.apps.smartprot.data.model.RegisterResponse
+import com.sysfactor.apps.smartprot.data.model.UsageRequest
 
 class DeviceRepository(context: Context) {
 
@@ -81,6 +82,16 @@ class DeviceRepository(context: Context) {
             val deviceId = auth.getDeviceId() ?: return
             val request = DomainsRequest(domains = domains, appPackage = appPackage)
             api.storeDomains(deviceId, request)
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Reports today's accumulated usage minutes per rule id, so the panel can show "used X / Y min today". */
+    suspend fun reportUsage(usage: Map<String, Int>) {
+        if (usage.isEmpty()) return
+        try {
+            val deviceId = auth.getDeviceId() ?: return
+            api.storeUsage(deviceId, UsageRequest(usage = usage))
         } catch (_: Exception) {
         }
     }

@@ -115,6 +115,10 @@ class DeviceController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'public_id']);
 
+        $usageByRuleId = $device->ruleUsages()
+            ->where('usage_date', now()->toDateString())
+            ->pluck('minutes_used', 'rule_id');
+
         return view('devices.show', [
             'device' => $device,
             'policy' => $policy,
@@ -122,6 +126,7 @@ class DeviceController extends Controller
             'rules' => collect($policy?->rules ?? []),
             'lastPolicySync' => $lastPolicySync,
             'policySyncIntervalMinutes' => 1,
+            'usageByRuleId' => $usageByRuleId,
             'otherDevices' => $otherDevices,
         ]);
     }
