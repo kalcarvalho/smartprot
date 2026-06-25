@@ -31,7 +31,7 @@
                 <div class="stat"><span>Icone do app</span><strong>{{ ($settings['app_icon_visible'] ?? true) ? 'Visivel' : 'Oculto' }}</strong></div>
             </section>
 
-            <section class="panel" style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:16px;padding:1.25rem;">
+            <section class="panel" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:1.25rem;">
                 <span class="muted">Proximo sync de politica esperado</span>
                 <strong id="policy-sync-countdown" style="font-size:32px;font-family:monospace;"
                     data-last-sync="{{ $lastPolicySync?->toISOString() }}"
@@ -45,7 +45,7 @@
                 </span>
             </section>
 
-            <section style="display:flex;gap:8px;margin-bottom:16px;">
+            <section style="display:flex;gap:8px;">
                 <a class="button secondary" href="{{ route('devices.events', $device) }}">Ver eventos de rede</a>
                 <a class="button secondary" href="{{ route('devices.domains.index', $device) }}">Ver dominios observados</a>
             </section>
