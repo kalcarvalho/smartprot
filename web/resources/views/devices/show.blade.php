@@ -183,16 +183,8 @@
                                     <button class="secondary compact" type="submit">Duplicar</button>
                                 </form>
                                 @if ($otherDevices->isNotEmpty())
-                                    <form method="post" action="{{ route('devices.rules.copy-to', [$device, $rule['id']]) }}" style="display:flex;gap:4px;align-items:center;">
-                                        @csrf
-                                        <select name="target_device_id" required style="height:32px;font-size:13px;">
-                                            <option value="" disabled selected>Copiar para...</option>
-                                            @foreach ($otherDevices as $other)
-                                                <option value="{{ $other->id }}">{{ $other->name }}</option>
-                                            @endforeach
-                                        </select>
-                                        <button class="secondary compact" type="submit">Copiar</button>
-                                    </form>
+                                    <button type="button" class="secondary compact"
+                                        onclick='window.openCopyModal(@json($rule["id"]))'>Copiar para...</button>
                                 @endif
                                 <form method="post" action="{{ route('devices.rules.destroy', [$device, $rule['id']]) }}">
                                     @csrf
@@ -310,6 +302,40 @@
                     };
                 })();
             </script>
+
+            @if ($otherDevices->isNotEmpty())
+                <dialog id="copy-rule-modal" style="border:none;border-radius:var(--border-radius-lg, 12px);padding:0;max-width:420px;width:100%;">
+                    <div class="panel" style="margin:0;">
+                        <h2>Copiar regra para...</h2>
+                        <form id="copy-rule-form" method="post" action="{{ route('devices.rules.copy-to', [$device, '__RULE__']) }}">
+                            @csrf
+                            <div class="rule-list">
+                                @foreach ($otherDevices as $other)
+                                    <button type="submit" name="target_device_id" value="{{ $other->id }}" class="secondary" style="width:100%;justify-content:space-between;">
+                                        {{ $other->name }}
+                                        <span class="muted">{{ $other->public_id }}</span>
+                                    </button>
+                                @endforeach
+                            </div>
+                        </form>
+                        <div class="actions" style="margin-top: 16px;display:flex;justify-content:flex-end;">
+                            <button type="button" class="secondary" onclick="document.getElementById('copy-rule-modal').close();">Cancelar</button>
+                        </div>
+                    </div>
+                </dialog>
+
+                <script>
+                    (function () {
+                        var copyForm = document.getElementById('copy-rule-form');
+                        var copyUrlTemplate = copyForm.getAttribute('action');
+
+                        window.openCopyModal = function (ruleId) {
+                            copyForm.setAttribute('action', copyUrlTemplate.replace('__RULE__', ruleId));
+                            document.getElementById('copy-rule-modal').showModal();
+                        };
+                    })();
+                </script>
+            @endif
         </main>
     </div>
 </x-layouts.app>
