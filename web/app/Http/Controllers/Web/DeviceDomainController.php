@@ -33,6 +33,37 @@ class DeviceDomainController extends Controller
         ]);
     }
 
+    public function apps(Request $request, Device $device): View
+    {
+        abort_unless($device->user_id === null || $device->user_id === $request->user()->id, 404);
+
+        $rulesByApp = collect($device->latestPolicy()?->rules ?? [])
+            ->filter(fn (array $rule): bool => ($rule['type'] ?? null) === 'app')
+            ->keyBy('target');
+
+        $apps = $device->domains()
+            ->whereNotNull('app_package')
+            ->get()
+            ->groupBy('app_package')
+            ->map(function ($domains, $appPackage) use ($rulesByApp) {
+                $rule = $rulesByApp->get($appPackage);
+
+                return [
+                    'app_package' => $appPackage,
+                    'domain_count' => $domains->count(),
+                    'last_seen' => $domains->max('last_seen'),
+                    'blocked' => $rule !== null && ($rule['network'] ?? null) === 'blocked' && ($rule['enabled'] ?? true),
+                ];
+            })
+            ->sortByDesc('last_seen')
+            ->values();
+
+        return view('devices.apps', [
+            'device' => $device,
+            'apps' => $apps,
+        ]);
+    }
+
     public function associate(Request $request, Device $device, DeviceDomain $domain): RedirectResponse
     {
         abort_unless($device->user_id === null || $device->user_id === $request->user()->id, 404);

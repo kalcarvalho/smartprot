@@ -115,6 +115,61 @@ class DeviceDomainManagementTest extends TestCase
         $this->assertDatabaseMissing('app_domain_mappings', ['id' => $mapping->id]);
     }
 
+    public function test_user_can_view_observed_apps_for_own_device(): void
+    {
+        $user = User::factory()->create();
+        $device = $this->deviceFor($user);
+        $device->domains()->create([
+            'domain' => 't.me',
+            'app_package' => 'org.telegram.messenger',
+            'seen_count' => 2,
+            'first_seen' => now(),
+            'last_seen' => now(),
+        ]);
+        $device->domains()->create([
+            'domain' => 'telegram.org',
+            'app_package' => 'org.telegram.messenger',
+            'seen_count' => 1,
+            'first_seen' => now(),
+            'last_seen' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->get("/devices/{$device->id}/apps")
+            ->assertOk()
+            ->assertSee('org.telegram.messenger')
+            ->assertSee('Liberado');
+    }
+
+    public function test_user_can_block_and_unblock_an_observed_app(): void
+    {
+        $user = User::factory()->create();
+        $device = $this->deviceFor($user);
+        $device->policies()->create(['version' => 1, 'rules' => [], 'settings' => ['protection_enabled' => true]]);
+        $device->domains()->create([
+            'domain' => 't.me',
+            'app_package' => 'org.telegram.messenger',
+            'seen_count' => 1,
+            'first_seen' => now(),
+            'last_seen' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->patch("/devices/{$device->id}/apps/org.telegram.messenger/block", ['blocked' => '1'])
+            ->assertRedirect();
+
+        $rule = $device->fresh()->latestPolicy()->rules[0];
+        $this->assertSame('app', $rule['type']);
+        $this->assertSame('org.telegram.messenger', $rule['target']);
+        $this->assertSame('blocked', $rule['network']);
+
+        $this->actingAs($user)
+            ->patch("/devices/{$device->id}/apps/org.telegram.messenger/block", ['blocked' => '0'])
+            ->assertRedirect();
+
+        $this->assertSame([], $device->fresh()->latestPolicy()->rules);
+    }
+
     private function deviceFor(User $user, string $publicId = 'dev_test', string $name = 'Child phone'): Device
     {
         return Device::create([

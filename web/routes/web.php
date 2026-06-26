@@ -36,6 +36,8 @@ Route::middleware('auth')->group(function (): void {
 
     Route::get('/devices/{device}/domains', [DeviceDomainController::class, 'index'])->name('devices.domains.index');
     Route::patch('/devices/{device}/domains/{domain}', [DeviceDomainController::class, 'associate'])->name('devices.domains.associate');
+    Route::get('/devices/{device}/apps', [DeviceDomainController::class, 'apps'])->name('devices.apps.index');
+    Route::patch('/devices/{device}/apps/{appPackage}/block', [PolicyRuleController::class, 'toggleAppBlock'])->name('devices.apps.toggle-block');
 
     Route::get('/app-domain-mappings', [AppDomainMappingController::class, 'index'])->name('app-domain-mappings.index');
     Route::post('/app-domain-mappings', [AppDomainMappingController::class, 'store'])->name('app-domain-mappings.store');

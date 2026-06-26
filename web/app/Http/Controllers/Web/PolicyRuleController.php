@@ -223,6 +223,50 @@ class PolicyRuleController extends Controller
         return back()->with('status', $settings['app_icon_visible'] ? 'Icone do app reativado.' : 'Icone do app ocultado.');
     }
 
+    public function toggleAppBlock(Request $request, Device $device, string $appPackage): RedirectResponse
+    {
+        abort_unless($device->user_id === null || $device->user_id === $request->user()->id, 404);
+
+        $data = $request->validate([
+            'blocked' => ['required', 'boolean'],
+        ]);
+
+        $policy = $device->latestPolicy();
+        $rules = collect($policy?->rules ?? []);
+        $existing = $rules->first(fn (array $rule): bool => ($rule['type'] ?? null) === 'app' && ($rule['target'] ?? null) === $appPackage);
+
+        if ($data['blocked']) {
+            if ($existing !== null) {
+                $rules = $rules->map(function (array $rule) use ($existing) {
+                    return $rule['id'] === $existing['id'] ? [...$rule, 'network' => 'blocked', 'enabled' => true] : $rule;
+                });
+            } else {
+                $rules->push([
+                    'id' => (string) Str::uuid(),
+                    'type' => 'app',
+                    'target' => $appPackage,
+                    'network' => 'blocked',
+                    'enabled' => true,
+                    'schedule' => null,
+                    'daily_limit_minutes' => null,
+                    'notes' => null,
+                    'created_at' => now()->toISOString(),
+                ]);
+            }
+        } else {
+            // "Liberado" just means no app rule exists for it -- the default
+            // network policy (allowed) already covers it, same as any other
+            // app SmartProt has never seen before.
+            $rules = $rules->reject(fn (array $rule): bool => ($rule['type'] ?? null) === 'app' && ($rule['target'] ?? null) === $appPackage);
+        }
+
+        $this->createPolicyVersion($device, $policy, $rules->values()->all(), $this->settingsFrom($policy));
+
+        return back()->with('status', $data['blocked']
+            ? "App {$appPackage} bloqueado."
+            : "App {$appPackage} liberado.");
+    }
+
     public function toggleDefaultNetwork(Request $request, Device $device): RedirectResponse
     {
         abort_unless($device->user_id === null || $device->user_id === $request->user()->id, 404);

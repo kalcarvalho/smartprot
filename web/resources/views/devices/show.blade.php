@@ -48,6 +48,7 @@
             <section style="display:flex;gap:8px;">
                 <a class="button secondary" href="{{ route('devices.events', $device) }}">Ver eventos de rede</a>
                 <a class="button secondary" href="{{ route('devices.domains.index', $device) }}">Ver dominios observados</a>
+                <a class="button secondary" href="{{ route('devices.apps.index', $device) }}">Ver apps observados</a>
             </section>
 
             <script>
