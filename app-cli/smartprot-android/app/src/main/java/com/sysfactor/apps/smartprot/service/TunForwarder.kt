@@ -512,10 +512,18 @@ class TunForwarder(
         } else {
             val ipAllowed = dstIp in currentAllowedIps
             if (!ipAllowed) {
-                if (dstPort == 443 && (currentBlockedDomains.isNotEmpty() || currentDefaultNetwork == "blocked")) {
-                    // QUIC carries its own encrypted SNI we can't inspect at this layer.
-                    // Dropping it forces the client to fall back to TCP, where the
-                    // ClientHello SNI can be inspected in inspectAndBlock().
+                // QUIC carries its own encrypted SNI we can't inspect at this layer.
+                // Forcing every QUIC attempt to fail (so the client falls back to
+                // TCP, where inspectAndBlock() can read the ClientHello SNI) used
+                // to trigger whenever ANY domain rule existed -- but that broke
+                // QUIC for every other site/app too, not just the blocked one,
+                // and this relay's TCP path isn't reliable enough to be a
+                // universal fallback. Only pay that price in the strict
+                // default_network="blocked" mode, where breaking unidentifiable
+                // encrypted traffic is the deliberate point. Otherwise, a
+                // domain blocked only over QUIC/HTTP3 stays reachable -- a
+                // known gap, accepted in exchange for not breaking everything.
+                if (dstPort == 443 && currentDefaultNetwork == "blocked") {
                     Log.i(TAG, "Blocked UDP:443 to ${intToIp(dstIp)} (forcing TCP fallback)")
                     return
                 }
