@@ -265,14 +265,26 @@ class TunForwarder(
                     while (running) {
                         val n = sock.getInputStream().read(outBuf)
                         if (n <= 0) break
-                        val writeSeq = localServerSeq + 1
-                        val cur = tcpConns[key]
-                        val clientAck = if (cur != null) cur.clientSeq else clientSeq + 1L
-                        writeTcpPacket(key.dstIp, key.srcIp, key.dstPort, key.srcPort,
-                            writeSeq, clientAck,
-                            0x18.toByte(), 65535, outBuf, n)
-                        localServerSeq += n
-                        cur?.serverSeq = localServerSeq
+                        // read() can return up to the buffer size in one call, but
+                        // writeTcpPacket() built exactly one IP packet with DF set
+                        // and no fragmentation -- any response chunk bigger than
+                        // the path MTU (~1500 bytes; a TLS Certificate message or
+                        // any real HTML/JS payload routinely is) got silently
+                        // dropped, so the connection looked "established" but no
+                        // data ever arrived. Split into MSS-sized segments.
+                        var offset = 0
+                        while (offset < n) {
+                            val chunkLen = min(MAX_TCP_SEGMENT_SIZE, n - offset)
+                            val writeSeq = localServerSeq + 1
+                            val cur = tcpConns[key]
+                            val clientAck = if (cur != null) cur.clientSeq else clientSeq + 1L
+                            writeTcpPacket(key.dstIp, key.srcIp, key.dstPort, key.srcPort,
+                                writeSeq, clientAck,
+                                0x18.toByte(), 65535, outBuf, chunkLen, offset)
+                            localServerSeq += chunkLen
+                            cur?.serverSeq = localServerSeq
+                            offset += chunkLen
+                        }
                     }
                 } catch (_: Exception) {}
                 closeTcpConn(key)
@@ -459,7 +471,7 @@ class TunForwarder(
     private fun writeTcpPacket(
         srcIp: Int, dstIp: Int, srcPort: Int, dstPort: Int,
         seqNum: Long, ackNum: Long, flags: Byte, window: Int,
-        data: ByteArray, dataLen: Int
+        data: ByteArray, dataLen: Int, dataOffset: Int = 0
     ) {
         val tcpHdrLen = 20
         val totalHdrLen = 20 + tcpHdrLen
@@ -490,7 +502,7 @@ class TunForwarder(
         writeUShort(pkt, 36, 0)
 
         if (dataLen > 0) {
-            System.arraycopy(data, 0, pkt, totalHdrLen, dataLen)
+            System.arraycopy(data, dataOffset, pkt, totalHdrLen, dataLen)
         }
 
         val tcpCksum = tcpChecksum(pkt, 20, tcpHdrLen + dataLen, srcIp, dstIp)
@@ -695,5 +707,8 @@ class TunForwarder(
         private const val PROTO_TCP = 6
         private const val PROTO_UDP = 17
         private const val INVALID_UID = -1
+        // Conservative MSS: well under any real-world path MTU (cellular links
+        // can be smaller than Ethernet's 1500) plus 40 bytes of IPv4+TCP header.
+        private const val MAX_TCP_SEGMENT_SIZE = 1400
     }
 }
