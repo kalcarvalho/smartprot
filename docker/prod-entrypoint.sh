@@ -4,10 +4,20 @@ set -eu
 mkdir -p bootstrap/cache storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs
 chmod -R 775 bootstrap/cache storage
 
+# storage/ lives on the bind-mounted host volume (./web:/var/www/html), so this
+# file survives container restarts -- unlike .env itself, which is rewritten
+# from scratch below on every boot. Without this, every restart silently
+# rotated APP_KEY, invalidating every session/cookie still in use.
+KEY_FILE=storage/.app_key
+if [ ! -s "$KEY_FILE" ]; then
+    php -r "echo 'base64:'.base64_encode(random_bytes(32));" > "$KEY_FILE"
+fi
+APP_KEY=$(cat "$KEY_FILE")
+
 cat > .env <<EOF
 APP_NAME=SmartProt
 APP_ENV=production
-APP_KEY=
+APP_KEY=${APP_KEY}
 APP_DEBUG=false
 APP_URL=${APP_URL}
 APP_LOCALE=pt_BR
@@ -33,9 +43,6 @@ SMARTPROT_ADMIN_PASSWORD=${SMARTPROT_ADMIN_PASSWORD}
 EOF
 
 composer install --no-dev --optimize-autoloader
-if ! grep -q '^APP_KEY=base64:' .env; then
-    php artisan key:generate --force --no-interaction
-fi
 php artisan migrate --force
 php artisan db:seed --force
 php artisan config:clear
