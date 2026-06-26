@@ -375,12 +375,38 @@ class PolicyVpnService : VpnService() {
         builder.addRoute("0.0.0.0", 0)
         builder.addDnsServer("1.1.1.1")
         builder.addDnsServer("8.8.8.8")
-        // Only SmartProt itself bypasses the VPN (loop prevention). Every other
-        // app must be tunneled — domain/IP rules are app-agnostic (e.g. a browser
-        // hitting a blocked domain), so excluding apps without their own "app"
-        // rule from the tunnel silently broke domain/IP blocking entirely.
         builder.addDisallowedApplication(packageName)
-        Log.i(TAG, "VPN rebuild: ${blockedApps.size} apps explicitly blocked, all other traffic tunneled")
+
+        // Only apps with their own explicit "app" rule (block or allow) are
+        // tunneled; every other app bypasses the VPN entirely by default --
+        // a deliberate choice (NoRoot Firewall-style "not listed = allowed,
+        // and left alone") favoring reliability for unmanaged apps over the
+        // ability to catch them with a domain/IP rule they aren't named in.
+        // This hand-rolled TUN relay isn't reliable enough for every app's
+        // traffic to flow through it; e.g. WhatsApp's chatty, long-lived
+        // connections broke entirely while tunneled even with zero matching
+        // block rules, looking exactly like a block despite none existing.
+        //
+        // Exception: under default_network="blocked" (the strict firewall
+        // mode), bypassing unmanaged apps would defeat the entire point --
+        // that mode means "block everything unless I allow it", so every app
+        // must stay tunneled there regardless of the reliability cost.
+        var excludedCount = 0
+        if (resolvedDefaultNetwork != "blocked") {
+            val pm = packageManager
+            val appRuleTargets = currentRules.filter { it.type == "app" }.map { it.target }.toSet()
+            for (app in pm.getInstalledApplications(0)) {
+                if (app.packageName != packageName && app.packageName !in appRuleTargets) {
+                    try {
+                        builder.addDisallowedApplication(app.packageName)
+                        excludedCount++
+                    } catch (_: Exception) {
+                    }
+                }
+            }
+        }
+
+        Log.i(TAG, "VPN rebuild: $excludedCount apps bypass, default=$resolvedDefaultNetwork, ${blockedApps.size} blocked")
 
         vpnInterface?.close()
         vpnInterface = builder.establish()

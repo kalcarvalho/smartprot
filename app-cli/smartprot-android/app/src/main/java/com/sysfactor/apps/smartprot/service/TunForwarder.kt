@@ -204,6 +204,15 @@ class TunForwarder(
             try {
                 conn.socket.getOutputStream().write(buf, ihl + dataOffset, payloadLen)
                 conn.socket.getOutputStream().flush()
+                // Acknowledge receipt immediately. Without this, the device's
+                // TCP stack only learned its data was received whenever the
+                // real server happened to send something back in the same
+                // window -- connections that mostly send and rarely receive
+                // (chat pings/receipts, e.g. WhatsApp) would have their send
+                // window fill up waiting for an ACK that never came, and
+                // silently stop sending without ever erroring or closing.
+                writeTcpPacket(key.dstIp, key.srcIp, key.dstPort, key.srcPort,
+                    conn.serverSeq + 1, conn.clientSeq, 0x10.toByte(), 65535, ByteArray(0), 0)
             } catch (e: Exception) {
                 Log.w(TAG, "Write to ${intToIp(dstIp)}:$dstPort failed (${e.javaClass.simpleName}: ${e.message})")
                 closeTcpConn(key)
