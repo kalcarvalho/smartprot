@@ -205,6 +205,7 @@ class TunForwarder(
                 conn.socket.getOutputStream().write(buf, ihl + dataOffset, payloadLen)
                 conn.socket.getOutputStream().flush()
             } catch (e: Exception) {
+                Log.w(TAG, "Write to ${intToIp(dstIp)}:$dstPort failed (${e.javaClass.simpleName}: ${e.message})")
                 closeTcpConn(key)
             }
         }
@@ -273,6 +274,7 @@ class TunForwarder(
             writeTcpPacket(key.dstIp, key.srcIp, key.dstPort, key.srcPort,
                 serverSeq, clientSeq + 1, 0x12.toByte(), 65535, ByteArray(0), 0)
         } catch (e: Exception) {
+            Log.w(TAG, "Real connect failed for ${intToIp(dstIp)}:$dstPort (${e.javaClass.simpleName}: ${e.message}) -- sending RST")
             sendRst(key.dstIp, key.srcIp, key.dstPort, key.srcPort,
                 clientSeq + 1, 0)
         }
