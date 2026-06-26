@@ -110,12 +110,19 @@ class PolicyVpnService : VpnService() {
         scope.launch {
             while (true) {
                 delay(POLICY_SYNC_LOOP_INTERVAL_MS)
-                val repo = DeviceRepository(this@PolicyVpnService)
+                // Catches everything (not just Exception) so a single bad tick
+                // can never permanently kill this loop -- it used to have no
+                // protection at all around applyRules(), and one uncaught
+                // throwable silently stopped all future syncs for the rest of
+                // the process's lifetime (only a full app restart fixed it).
                 try {
+                    val repo = DeviceRepository(this@PolicyVpnService)
                     repo.syncPolicy().onSuccess { policy ->
                         applyRules(policy.rules, policy.appDomains, policy.settings?.defaultNetwork ?: "allowed", policy.settings?.protectionEnabled ?: true)
                     }
-                } catch (_: Exception) {}
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Policy sync loop tick failed", t)
+                }
             }
         }
     }
@@ -176,7 +183,11 @@ class PolicyVpnService : VpnService() {
         scope.launch {
             while (true) {
                 delay(DOMAIN_REPORT_INTERVAL_MS)
-                flushObservedDomains()
+                try {
+                    flushObservedDomains()
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Domain report loop tick failed", t)
+                }
             }
         }
     }
