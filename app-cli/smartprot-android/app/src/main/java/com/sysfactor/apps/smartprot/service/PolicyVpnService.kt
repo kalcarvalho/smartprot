@@ -377,26 +377,30 @@ class PolicyVpnService : VpnService() {
         builder.addDnsServer("8.8.8.8")
         builder.addDisallowedApplication(packageName)
 
-        // Only apps with their own explicit "app" rule (block or allow) are
-        // tunneled; every other app bypasses the VPN entirely by default --
-        // a deliberate choice (NoRoot Firewall-style "not listed = allowed,
-        // and left alone") favoring reliability for unmanaged apps over the
-        // ability to catch them with a domain/IP rule they aren't named in.
-        // This hand-rolled TUN relay isn't reliable enough for every app's
-        // traffic to flow through it; e.g. WhatsApp's chatty, long-lived
-        // connections broke entirely while tunneled even with zero matching
-        // block rules, looking exactly like a block despite none existing.
+        // Real-time chat apps bypass the VPN by default regardless of anything
+        // else below -- this hand-rolled TUN relay isn't reliable enough for
+        // their chatty, long-lived connections to survive it intact (e.g.
+        // WhatsApp stopped sending/receiving entirely while tunneled, even
+        // with zero matching block rules). Override per-app with an explicit
+        // "app" rule targeting one of these packages.
         //
-        // Exception: under default_network="blocked" (the strict firewall
-        // mode), bypassing unmanaged apps would defeat the entire point --
-        // that mode means "block everything unless I allow it", so every app
-        // must stay tunneled there regardless of the reliability cost.
+        // Every other app: tunneled only if there's something that could
+        // actually apply to it -- its own "app" rule, OR any domain/IP rule
+        // (those are app-agnostic, e.g. blocking "youtube.com" must catch
+        // Chrome too, not just an app named in its own rule). With neither,
+        // bypassing is a pure efficiency win (nothing would ever match it
+        // anyway). Exception: default_network="blocked" tunnels everything
+        // unconditionally, since that mode means "block unless I allow it" --
+        // bypassing unmanaged apps there would defeat the entire point.
         var excludedCount = 0
         if (resolvedDefaultNetwork != "blocked") {
             val pm = packageManager
             val appRuleTargets = currentRules.filter { it.type == "app" }.map { it.target }.toSet()
+            val hasDomainOrIpRule = currentRules.any { it.type == "domain" || it.type == "url" || it.type == "ip" }
             for (app in pm.getInstalledApplications(0)) {
-                if (app.packageName != packageName && app.packageName !in appRuleTargets) {
+                if (app.packageName == packageName || app.packageName in appRuleTargets) continue
+                val shouldBypass = app.packageName in REALTIME_CHAT_APPS || !hasDomainOrIpRule
+                if (shouldBypass) {
                     try {
                         builder.addDisallowedApplication(app.packageName)
                         excludedCount++
@@ -570,6 +574,13 @@ class PolicyVpnService : VpnService() {
         private const val KEY_VPN_ACTIVE = "vpn_active"
         private const val DOMAIN_REPORT_INTERVAL_MS = 60_000L
         private const val POLICY_SYNC_LOOP_INTERVAL_MS = 60_000L
+
+        private val REALTIME_CHAT_APPS = setOf(
+            "com.whatsapp",
+            "com.whatsapp.w4b",
+            "org.telegram.messenger",
+            "org.thoughtcrime.securesms"
+        )
 
         val isRunning = MutableStateFlow(false)
         val blockedAppPackages = MutableStateFlow<Set<String>>(emptySet())
